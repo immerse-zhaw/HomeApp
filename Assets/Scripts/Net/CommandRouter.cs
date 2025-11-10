@@ -30,7 +30,20 @@ namespace Net
                 case "video.play":
                     {
                         PlayVideoCmd cmd = JsonUtility.FromJson<PlayVideoCmd>(json);
-                        videoController.PlayVideo(cmd.url, cmd.projection, cmd.stereo, cmd.startTime);
+                        string url = settings.WebsiteUrl + cmd.url;
+                        videoController.PlayVideo(url, cmd.mapping, cmd.projection, cmd.stereo);
+                        break;
+                    }
+                case "video.changeMapping":
+                    {
+                        ChangeMappingVideoCmd cmd = JsonUtility.FromJson<ChangeMappingVideoCmd>(json);
+                        videoController.ChangeProjectionMapping(cmd.mapping, cmd.projection, cmd.stereo);
+                        break;
+                    }
+                case "video.seek":
+                    {
+                        SeekVideoCmd cmd = JsonUtility.FromJson<SeekVideoCmd>(json);
+                        videoController.Seek(cmd.timeCode);
                         break;
                     }
                 case "video.pause":
@@ -51,12 +64,31 @@ namespace Net
                 case "model.load":
                     {
                         LoadModelCmd cmd = JsonUtility.FromJson<LoadModelCmd>(json);
-                        glbController.LoadModel(cmd.url);
+                        string url = settings.WebsiteUrl + cmd.url;
+                        glbController.LoadModel(url);
                         break;
                     }
                 case "model.close":
                     {
                         glbController.CloseModel();
+                        break;
+                    }
+                case "model.playAnimation":
+                    {
+                        ModelPlayAnimationCmd cmd = JsonUtility.FromJson<ModelPlayAnimationCmd>(json);
+                        glbController.PlayAnimation(cmd.name);
+                        break;
+                    }
+                case "model.setPointSize":
+                    {
+                        ModelSetPointCmd cmd = JsonUtility.FromJson<ModelSetPointCmd>(json);
+                        glbController.SetPointsSize(cmd.size);
+                        break;
+                    }
+                case "model.setScale":
+                    {
+                        ModelSetScaleCmd cmd = JsonUtility.FromJson<ModelSetScaleCmd>(json);
+                        glbController.SetScale(cmd.scale);
                         break;
                     }
                 default:

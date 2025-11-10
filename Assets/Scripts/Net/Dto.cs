@@ -35,9 +35,25 @@ namespace Net.Messages
     {
         public string type = "video.play";
         public string url;
-        public string projection = "360"; // "360" | "180" | "2d"
+        public string mapping = "equirectangular"; // "equirectangular" | "cubemap"
+        public string projection = "360"; // "360" | "180"
         public string stereo = "mono";    // "mono" | "tb" | "sbs"
-        public float startTime = 0f;
+    }
+
+    [Serializable]
+    public class ChangeMappingVideoCmd
+    {
+        public string type = "video.changeMapping";
+        public string mapping = "equirectangular"; // "equirectangular" | "cubemap"
+        public string projection = "360"; // "360" | "180"
+        public string stereo = "mono";    // "mono" | "tb" | "sbs"
+    }
+
+    [Serializable]
+    public class SeekVideoCmd
+    {
+        public string type = "video.seek";
+        public double timeCode = 0.0;
     }
 
     [Serializable]
@@ -69,5 +85,26 @@ namespace Net.Messages
     public class ClearModelCmd
     {
         public string type = "model.close";
+    }
+
+    [Serializable]
+    public class ModelPlayAnimationCmd
+    {
+        public string type = "model.playAnimation";
+        public string name;
+    }
+
+    [Serializable]
+    public class ModelSetPointCmd
+    {
+        public string type = "model.setPointSize";
+        public float size;
+    }
+
+    [Serializable]
+    public class ModelSetScaleCmd
+    {
+        public string type = "model.setScale";
+        public float scale;
     }
 }

@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: c7b5c08b7c0304b5ca8f6049a2d3033b, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -156,7 +156,7 @@ Camera:
   m_GameObject: {fileID: 330585543}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 2
+  m_ClearFlags: 1
   m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
@@ -438,14 +438,14 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1001669001}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -10}
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 2101049548}
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &1255299397 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5223003105970596621, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
@@ -463,13 +463,13 @@ VideoPlayer:
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
-  m_TargetTexture: {fileID: 0}
+  m_TargetTexture: {fileID: 8600000, guid: 549402a495dcb4a2e815404075fada42, type: 2}
   m_TimeReference: 0
   m_TargetMaterialRenderer: {fileID: 0}
   m_TargetMaterialProperty: <noninit>
   m_RenderMode: 2
   m_AspectRatio: 2
-  m_DataSource: 0
+  m_DataSource: 1
   m_TimeUpdateMode: 2
   m_PlaybackSpeed: 1
   m_AudioOutputMode: 2
@@ -481,7 +481,7 @@ VideoPlayer:
   m_EnabledAudioTracks: 01
   m_DirectAudioMutes: 00
   m_ControlledAudioTrackCount: 1
-  m_PlayOnAwake: 1
+  m_PlayOnAwake: 0
   m_SkipOnDrop: 1
   m_Looping: 0
   m_WaitForFirstFrame: 1
@@ -532,9 +532,41 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: videoPlayer
+      value: 
+      objectReference: {fileID: 1255299400}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxCubemap
+      value: 
+      objectReference: {fileID: 2100000, guid: 650fd5dc02d16465f9998ae3d8ebb5d2, type: 2}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxDefault
+      value: 
+      objectReference: {fileID: 2100000, guid: c06452dfcf263444a84bfa04267a60db, type: 2}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxEquirect
+      value: 
+      objectReference: {fileID: 2100000, guid: c7b5c08b7c0304b5ca8f6049a2d3033b, type: 2}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: c7b5c08b7c0304b5ca8f6049a2d3033b, type: 2}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxMaterialCubemap
+      value: 
+      objectReference: {fileID: 2100000, guid: 650fd5dc02d16465f9998ae3d8ebb5d2, type: 2}
+    - target: {fileID: 1405449857630565706, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: skyboxMaterialEquirectangular
+      value: 
+      objectReference: {fileID: 2100000, guid: c7b5c08b7c0304b5ca8f6049a2d3033b, type: 2}
     - target: {fileID: 2426137639238340693, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
       propertyPath: m_Name
       value: App Root
+      objectReference: {fileID: 0}
+    - target: {fileID: 2750754349722238354, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 3850507215470340160, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
       propertyPath: modelRoot
@@ -589,7 +621,8 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 3813918429831181646, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 5223003105970596621, guid: 5ba5fd4d39a62400e9787c1d90468bd1, type: 3}

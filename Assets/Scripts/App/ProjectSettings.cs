@@ -7,6 +7,7 @@ namespace App
     {
         [Header("Network")]
         [SerializeField] private string websocketUrl = "wss://example.com/ws";
+        [SerializeField] private string websiteUrl = "http://example.com";
         [SerializeField, Min(1000)] private int pingIntervalMs = 1500;
         [Tooltip("Min-Max seconds between reconnect attempts (exponential backoff).")]
         [SerializeField] private Vector2 reconnectBackoff = new Vector2(1f, 20f);
@@ -17,6 +18,7 @@ namespace App
         [SerializeField] private bool enableGlbControls = true;
 
         public string WebsocketUrl => websocketUrl;
+        public string WebsiteUrl => websiteUrl;
         public int PingIntervalMs => pingIntervalMs;
         public Vector2 ReconnectBackoff => reconnectBackoff;
         public bool EnableAppLauncher => enableAppLauncher;
