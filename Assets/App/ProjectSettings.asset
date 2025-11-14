@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e90a2542631374aed99824b44669e598, type: 3}
   m_Name: ProjectSettings
   m_EditorClassIdentifier: 
-  websocketUrl: ws://localhost:5174/ws
-  websiteUrl: http://localhost:5173
+  websocketUrl: wss://xr.engineering.zhaw.ch/ws
+  websiteUrl: https://xr.engineering.zhaw.ch
   pingIntervalMs: 1500
   reconnectBackoff: {x: 1, y: 20}
   enableAppLauncher: 1
