@@ -12,14 +12,17 @@ namespace Playback
         [SerializeField] private Material skyboxDefault;
         [SerializeField] private Material skyboxEquirect;
         [SerializeField] private Material skyboxCubemap;
+        [SerializeField] private Material floor;
 
         public void Awake()
         {
             RenderSettings.skybox = skyboxDefault; 
+            SetFloorAlpha(1f);
         }
 
         public void PlayVideo(string url, string mapping, string projection, string stereo)
-        {
+        {   
+            SetFloorAlpha(0.1f);
             videoPlayer.url = url;
             videoPlayer.Play();
 
@@ -87,6 +90,15 @@ namespace Playback
             videoPlayer.Stop();
             RenderSettings.skybox = skyboxDefault; 
             Debug.Log("[VideoController] Stopping video.");
+        }
+        public void SetFloorAlpha(float alpha)
+        {
+            if (floor != null)
+            {
+                Color color = floor.color;
+                color.a = Mathf.Clamp01(alpha);
+                floor.color = color;
+            }
         }
     }
 }

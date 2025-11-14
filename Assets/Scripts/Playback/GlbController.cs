@@ -122,6 +122,10 @@ namespace Playback
             {
                 SetPointsSize(defaultPointSize);
             }
+            else
+            {
+                SetupGlbPipeline(modelRoot);    // Apply GLB pipeline only when it's not a point cloud
+            }
 
             onReady?.Invoke();
         }
@@ -153,6 +157,79 @@ namespace Playback
                     return true;
             }
             return false;
+        }
+
+        private void SetupGlbPipeline(Transform root)
+        {
+            // Add Rigidbody
+            var rigidbody = root.GetComponent<Rigidbody>();
+            if (rigidbody == null)
+            {
+                rigidbody = root.gameObject.AddComponent<Rigidbody>();
+                rigidbody.useGravity = false;
+                rigidbody.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            }
+            rigidbody.linearVelocity = Vector3.zero;
+            rigidbody.angularVelocity = Vector3.zero;
+
+            // Add Collider
+            if (!root.TryGetComponent<Collider>(out _))
+            {
+                Mesh mesh = null;
+                var meshFilter = root.GetComponentInChildren<MeshFilter>();
+                if (meshFilter != null)
+                    mesh = meshFilter.sharedMesh;
+
+                if (mesh != null)
+                {
+                    var meshCollider = root.gameObject.AddComponent<MeshCollider>();
+                    meshCollider.sharedMesh = mesh;
+                    meshCollider.convex = true;
+                }
+                else
+                {
+                    var boxCollider = root.gameObject.AddComponent<BoxCollider>();
+                    var renderers = root.GetComponentsInChildren<Renderer>();
+                    Bounds bounds = renderers.Length > 0 ? renderers[0].bounds : new Bounds(root.position, Vector3.zero);
+                    foreach (var rr in renderers)
+                        bounds.Encapsulate(rr.bounds);
+                    boxCollider.center = bounds.center;
+                    boxCollider.size = bounds.size;
+                }
+            }
+
+            // Add XRGrabInteractable
+            var grabbable = root.gameObject.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            grabbable.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.VelocityTracking;
+            grabbable.throwOnDetach = true;
+
+            // Add Editable tag
+            root.gameObject.tag = "Editable";
+
+            // Add MeshRenderer and MeshFilter to root if needed
+            var childMeshRenderer = root.GetComponentInChildren<MeshRenderer>();
+            var childMeshFilter = root.GetComponentInChildren<MeshFilter>();
+            if (childMeshRenderer != null && childMeshFilter != null)
+            {
+                var meshFilter = root.gameObject.AddComponent<MeshFilter>();
+                var meshRenderer = root.gameObject.AddComponent<MeshRenderer>();
+                meshFilter.sharedMesh = childMeshFilter.sharedMesh;
+                meshRenderer.sharedMaterials = childMeshRenderer.sharedMaterials;
+            }
+
+            // Set glTF-unlit shader for all MeshRenderers
+            var meshRenderers = root.GetComponentsInChildren<MeshRenderer>();
+            Shader gltfUnlitShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (gltfUnlitShader != null)
+            {
+                foreach (var mr in meshRenderers)
+                {
+                    foreach (var mat in mr.materials)
+                    {
+                        mat.shader = gltfUnlitShader;
+                    }
+                }
+            }
         }
     }
 }

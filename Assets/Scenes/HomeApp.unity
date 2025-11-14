@@ -559,6 +559,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: App Root
       objectReference: {fileID: 0}
+    - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+      propertyPath: floor
+      value: 
+      objectReference: {fileID: 2100000, guid: d1e4d1c27219b3348a85d468eff6958f, type: 2}
     - target: {fileID: 6448257825973987505, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: m_LocalPosition.x
       value: 1.87011
