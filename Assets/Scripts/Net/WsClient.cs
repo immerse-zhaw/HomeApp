@@ -1,16 +1,18 @@
-using NativeWebSocket;
+using System.Net.WebSockets;
 using App;
 using UnityEngine;
 using System;
 using System.Text;
 using Net.Messages;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Net
 {
     public class WsClient : MonoBehaviour
     {
         private ProjectSettings settings;
-        private WebSocket ws;
+        private ClientWebSocket ws;
 
         private float heartbeatAccumMs;
         private int reconnecAttempt;
@@ -43,35 +45,15 @@ namespace Net
             }
 
             Debug.Log($"[WsClient] Connecting → {settings.WebsocketUrl}");
-            ws = new WebSocket(settings.WebsocketUrl);
-
-            ws.OnOpen += () =>
-            {
-                SendHello();
-                Debug.Log("[WsClient] OPEN");
-                reconnecAttempt = 0;
-            };
-
-            ws.OnError += (e) =>
-            {
-                Debug.LogWarning($"[WsClient] ERROR: {e}");
-            };
-
-            ws.OnClose += (code) =>
-            {
-                Debug.Log($"[WsClient] CLOSE ({code})");
-                TryScheduleReconnect();
-            };
-
-            ws.OnMessage += (data) =>
-            {
-                string text = Encoding.UTF8.GetString(data);
-                OnMessage?.Invoke(text);
-            };
-
+            ws = new ClientWebSocket();
             try
             {
-                await ws.Connect();
+                var uri = new Uri(settings.WebsocketUrl.Replace("ws://", "wss://"));
+                await ws.ConnectAsync(uri, CancellationToken.None);
+                Debug.Log("[WsClient] OPEN");
+                reconnecAttempt = 0;
+                SendHello();
+                _ = ReceiveLoop();
             }
             catch (Exception ex)
             {
@@ -82,9 +64,6 @@ namespace Net
 
         void Update()
         {
-#if !UNITY_WEBGL || UNITY_EDITOR
-            ws?.DispatchMessageQueue();
-#endif
             if (shuttingDown || !IsOpen) return;
 
             heartbeatAccumMs += Time.deltaTime * 1000f;
@@ -92,6 +71,20 @@ namespace Net
             {
                 heartbeatAccumMs = 0f;
                 SafeSend("{\"type\":\"ping\"}");
+            }
+            async void Update()
+            {
+    #if !UNITY_WEBGL || UNITY_EDITOR
+                // ws?.DispatchMessageQueue(); // Not needed for ClientWebSocket
+    #endif
+                if (shuttingDown || !IsOpen) return;
+
+                heartbeatAccumMs += Time.deltaTime * 1000f;
+                if (heartbeatAccumMs >= settings.PingIntervalMs)
+                {
+                    heartbeatAccumMs = 0f;
+                    await SafeSend("{\"type\":\"ping\"}");
+                }
             }
         }
 
@@ -105,7 +98,7 @@ namespace Net
             shuttingDown = true;
             try
             {
-                ws?.Close();
+                ws?.Abort();
             }
             catch { }
         }
@@ -125,7 +118,7 @@ namespace Net
             Invoke(nameof(Connect), delay);
         }
 
-        private void SendHello()
+        private async void SendHello()
         {
             var msg = new HelloMsg();
             msg.device.androidId = SystemInfo.deviceUniqueIdentifier;
@@ -134,14 +127,50 @@ namespace Net
             msg.app.version      = Application.version;
             var json = JsonUtility.ToJson(msg);
 
-            SafeSend(json);
+            await SafeSend(json);
         }
 
-        public void SafeSend(string text)
+        public async Task SafeSend(string text)
         {
             if (shuttingDown || !IsOpen) return;
-            _ = ws.SendText(text);
-            Debug.Log($"[WsClient] >> {text}");
+            try
+            {
+                var buffer = Encoding.UTF8.GetBytes(text);
+                await ws.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None);
+                Debug.Log($"[WsClient] >> {text}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WsClient] Send exception: {ex.Message}");
+            }
+        }
+        private async Task ReceiveLoop()
+        {
+            var buffer = new byte[4096];
+            while (ws != null && ws.State == WebSocketState.Open && !shuttingDown)
+            {
+                try
+                {
+                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        Debug.Log("[WsClient] CLOSE (remote)");
+                        TryScheduleReconnect();
+                        break;
+                    }
+                    else if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        OnMessage?.Invoke(text);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[WsClient] Receive exception: {ex.Message}");
+                    TryScheduleReconnect();
+                    break;
+                }
+            }
         }
     }
 }
