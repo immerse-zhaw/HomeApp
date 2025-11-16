@@ -1,4 +1,5 @@
 using UnityEngine;
+using Oculus.Interaction;
 using GLTFast;
 using System.Threading.Tasks;
 using System;
@@ -198,10 +199,11 @@ namespace Playback
                 }
             }
 
-            // Add XRGrabInteractable
-            var grabbable = root.gameObject.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
-            grabbable.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.VelocityTracking;
-            grabbable.throwOnDetach = true;
+            // Add Meta Grabbable component (Oculus/Meta)
+            if (!root.gameObject.GetComponent<Grabbable>())
+            {
+                root.gameObject.AddComponent<Grabbable>();
+            }
 
             // Add Editable tag
             root.gameObject.tag = "Editable";
