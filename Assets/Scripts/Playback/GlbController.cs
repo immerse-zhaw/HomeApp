@@ -3,6 +3,9 @@ using Oculus.Interaction;
 using GLTFast;
 using System.Threading.Tasks;
 using System;
+using UnityEngine.UI; // Minimal progress bar
+using UnityEngine.Networking; // Download progress
+using System.Collections; // Coroutine
 
 namespace Playback
 {
@@ -10,6 +13,8 @@ namespace Playback
     {
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
+        [Header("Download Progress (Optional)")]
+        [SerializeField] private Slider downloadProgress; // Assign to show progress; leave null for old behaviour
 
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 0.01f;        // Applied after load if mesh topology is Points
@@ -24,7 +29,14 @@ namespace Playback
         {
             Debug.Log($"[GlbController] Loading model from URL: {url}");
             ClearCurrentModel();
-            _ = LoadAsync(url, () => Debug.Log("[GlbController] Model is ready."));
+            if (downloadProgress)
+            {
+                StartCoroutine(DownloadThenInstantiate(url));
+            }
+            else
+            {
+                _ = LoadAsync(url, () => Debug.Log("[GlbController] Model is ready."));
+            }
         }
 
         public void CloseModel()
@@ -232,6 +244,55 @@ namespace Playback
                     }
                 }
             }
+        }
+
+        // Bare minimum: show network download progress, then load bytes via GLTFast
+        private IEnumerator DownloadThenInstantiate(string url)
+        {
+            if (downloadProgress)
+            {
+                downloadProgress.gameObject.SetActive(true);
+                downloadProgress.value = 0f;
+            }
+
+            using (var uwr = UnityWebRequest.Get(url))
+            {
+                uwr.SendWebRequest();
+                while (!uwr.isDone)
+                {
+                    if (downloadProgress) downloadProgress.value = uwr.downloadProgress; // 0..1
+                    yield return null;
+                }
+                if (uwr.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogError($"[GlbController] Download error: {uwr.error}");
+                    if (downloadProgress) downloadProgress.value = 0f;
+                    yield break;
+                }
+
+                var data = uwr.downloadHandler.data;
+                currentModel = new GltfImport();
+                var parseTask = currentModel.LoadGltfBinary(data);
+                while (!parseTask.IsCompleted) yield return null; // Simple wait; no extra progress weighting
+                if (!parseTask.Result)
+                {
+                    Debug.LogError("[GlbController] Failed to parse GLB.");
+                    yield break;
+                }
+                var instTask = currentModel.InstantiateMainSceneAsync(modelRoot);
+                while (!instTask.IsCompleted) yield return null;
+
+                animationPlayer = modelRoot.GetComponentInChildren<Animation>(true);
+                ApplyPointCloudMaterialIfNeeded();
+                if (HasPointTopologyInChildren(modelRoot)) SetPointsSize(defaultPointSize); else SetupGlbPipeline(modelRoot);
+            }
+
+            if (downloadProgress)
+            {
+                downloadProgress.value = 1f;
+                downloadProgress.gameObject.SetActive(false); // Hide when done
+            }
+            Debug.Log("[GlbController] Model is ready.");
         }
     }
 }
