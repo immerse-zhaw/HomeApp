@@ -3,9 +3,9 @@ using Oculus.Interaction;
 using GLTFast;
 using System.Threading.Tasks;
 using System;
-using UnityEngine.UI; // Minimal progress bar
-using UnityEngine.Networking; // Download progress
-using System.Collections; // Coroutine
+using UnityEngine.UI; 
+using UnityEngine.Networking; 
+using System.Collections; 
 
 namespace Playback
 {
@@ -14,7 +14,7 @@ namespace Playback
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
         [Header("Download Progress (Optional)")]
-        [SerializeField] private Slider downloadProgress; // Assign to show progress; leave null for old behaviour
+        [SerializeField] private Slider downloadProgress; 
 
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 0.01f;        // Applied after load if mesh topology is Points
@@ -106,6 +106,7 @@ namespace Playback
         {
             if (currentModel != null)
             {
+                currentModel.Dispose(); // fix for models not closing properly
                 currentModel = null;
                 animationPlayer = null;
                 foreach (Transform child in modelRoot)
@@ -246,7 +247,7 @@ namespace Playback
             }
         }
 
-        // Bare minimum: show network download progress, then load bytes via GLTFast
+        // Handle Get. Show network download progress, then load bytes via GLTFast
         private IEnumerator DownloadThenInstantiate(string url)
         {
             if (downloadProgress)
@@ -273,7 +274,7 @@ namespace Playback
                 var data = uwr.downloadHandler.data;
                 currentModel = new GltfImport();
                 var parseTask = currentModel.LoadGltfBinary(data);
-                while (!parseTask.IsCompleted) yield return null; // Simple wait; no extra progress weighting
+                while (!parseTask.IsCompleted) yield return null;
                 if (!parseTask.Result)
                 {
                     Debug.LogError("[GlbController] Failed to parse GLB.");
