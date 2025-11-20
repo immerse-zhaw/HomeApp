@@ -14,8 +14,25 @@ namespace Playback
         [SerializeField] private Material skyboxCubemap;
         [SerializeField] private Material floor;
 
+        private Camera mainCamera;
+        private CameraClearFlags originalClearFlags;
+        private Color originalBackgroundColor;
+
         public void Awake()
         {
+            // Find main camera (could be XR camera)
+            mainCamera = Camera.main;
+            if (mainCamera == null)
+            {
+                mainCamera = FindObjectOfType<Camera>();
+            }
+
+            if (mainCamera != null)
+            {
+                originalClearFlags = mainCamera.clearFlags;
+                originalBackgroundColor = mainCamera.backgroundColor;
+            }
+
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(1f);
         }
@@ -25,6 +42,12 @@ namespace Playback
             SetFloorAlpha(0.1f);
             videoPlayer.url = url;
             videoPlayer.Play();
+
+            // Set camera to render skybox for 360 video
+            if (mainCamera != null)
+            {
+                mainCamera.clearFlags = CameraClearFlags.Skybox;
+            }
 
             bool useCube = mapping.ToLower().Contains("cube");
             RenderSettings.skybox = useCube ? skyboxCubemap : skyboxEquirect;
@@ -88,7 +111,16 @@ namespace Playback
         public void StopVideo()
         {
             videoPlayer.Stop();
-            RenderSettings.skybox = skyboxDefault; 
+            RenderSettings.skybox = skyboxDefault;
+
+            // Restore original camera settings for passthrough
+            if (mainCamera != null)
+            {
+                mainCamera.clearFlags = originalClearFlags;
+                mainCamera.backgroundColor = originalBackgroundColor;
+            }
+
+            SetFloorAlpha(1f);
             Debug.Log("[VideoController] Stopping video.");
         }
         public void SetFloorAlpha(float alpha)
