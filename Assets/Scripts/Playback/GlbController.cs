@@ -156,6 +156,13 @@ namespace Playback
                 if (mesh != null && mesh.GetTopology(0) == MeshTopology.Points)
                 {
                     r.sharedMaterial = pointsMaterial;
+                    
+                    // Meta SDK optimization: Disable expensive rendering features for point clouds
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    r.receiveShadows = false;
+                    r.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+                    r.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+                    r.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
                 }
             }
         }
@@ -273,7 +280,7 @@ namespace Playback
 
                 var data = uwr.downloadHandler.data;
                 currentModel = new GltfImport();
-                var parseTask = currentModel.LoadGltfBinary(data);
+                var parseTask = currentModel.Load(data);
                 while (!parseTask.IsCompleted) yield return null;
                 if (!parseTask.Result)
                 {
@@ -285,7 +292,14 @@ namespace Playback
 
                 animationPlayer = modelRoot.GetComponentInChildren<Animation>(true);
                 ApplyPointCloudMaterialIfNeeded();
-                if (HasPointTopologyInChildren(modelRoot)) SetPointsSize(defaultPointSize); else SetupGlbPipeline(modelRoot);
+                if (HasPointTopologyInChildren(modelRoot))
+                {
+                    SetPointsSize(defaultPointSize);
+                }
+                else
+                {
+                    SetupGlbPipeline(modelRoot);
+                }
             }
 
             if (downloadProgress)

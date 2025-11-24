@@ -190,3 +190,4 @@ nohup.out
 
 # Local setup scripts
 initUnityGit.sh
+/build_BackUpThisFolder_ButDontShipItWithYourGame
