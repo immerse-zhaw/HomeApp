@@ -6,17 +6,20 @@ Shader "Unlit/PointsColor"
     SubShader
     {
         Tags { "RenderType"="Opaque" "Queue"="Geometry" }
+        LOD 100
+        
         Pass
         {
             ZWrite On
             Cull Off
 
             CGPROGRAM
-            #pragma target 3.0
+            #pragma target 3.5
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
-            #pragma multi_compile _ UNITY_SINGLE_PASS_STEREO STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
+            // Meta Quest stereo rendering
+            #pragma multi_compile _ STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
             #include "UnityCG.cginc"
 
             float _PointSize;
@@ -39,8 +42,14 @@ Shader "Unlit/PointsColor"
                 v2f o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+                
                 o.pos = UnityObjectToClipPos(v.vertex);
-                o.ps  = _PointSize;
+                
+                // Adaptive point size based on distance (critical for Quest performance)
+                float dist = length(UnityObjectToViewPos(v.vertex));
+                float sizeFactor = saturate(1.0 / (dist * 0.5)); // Scale down with distance
+                o.ps = _PointSize * sizeFactor;
+                
                 o.col = v.color;
                 return o;
             }
