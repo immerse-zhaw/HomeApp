@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Video;
+using UnityEngine.XR.ARFoundation;
 
 namespace Playback
 {
@@ -12,7 +13,14 @@ namespace Playback
         [SerializeField] private Material skyboxDefault;
         [SerializeField] private Material skyboxEquirect;
         [SerializeField] private Material skyboxCubemap;
-        [SerializeField] private Material floor;
+        
+        [Header("Floor")]
+        [SerializeField] private Renderer floorRenderer;
+
+        [Header("AR Components")]
+        [SerializeField] private GameObject arSession;
+        [SerializeField] private ARCameraManager arCameraManager;
+        [SerializeField] private Camera mainCamera;
 
         public void Awake()
         {
@@ -25,6 +33,11 @@ namespace Playback
             SetFloorAlpha(0.1f);
             videoPlayer.url = url;
             videoPlayer.Play();
+
+            // Disable AR passthrough and set camera to render skybox
+            if (arSession) arSession.SetActive(false);
+            if (arCameraManager) arCameraManager.enabled = false;
+            if (mainCamera) mainCamera.clearFlags = CameraClearFlags.Skybox;
 
             bool useCube = mapping.ToLower().Contains("cube");
             RenderSettings.skybox = useCube ? skyboxCubemap : skyboxEquirect;
@@ -89,15 +102,22 @@ namespace Playback
         {
             videoPlayer.Stop();
             RenderSettings.skybox = skyboxDefault; 
+            SetFloorAlpha(1f);
+
+            // Re-enable AR passthrough and restore camera settings
+            if (arSession) arSession.SetActive(true);
+            if (arCameraManager) arCameraManager.enabled = true;
+            if (mainCamera) mainCamera.clearFlags = CameraClearFlags.SolidColor;
+
             Debug.Log("[VideoController] Stopping video.");
         }
         public void SetFloorAlpha(float alpha)
         {
-            if (floor != null)
+            if (floorRenderer != null && floorRenderer.material != null)
             {
-                Color color = floor.color;
+                Color color = floorRenderer.material.color;
                 color.a = Mathf.Clamp01(alpha);
-                floor.color = color;
+                floorRenderer.material.color = color;
             }
         }
     }
