@@ -18,7 +18,6 @@ namespace Playback
         [SerializeField] private Renderer floorRenderer;
 
         [Header("AR Components")]
-        [SerializeField] private GameObject arSession;
         [SerializeField] private ARCameraManager arCameraManager;
         [SerializeField] private Camera mainCamera;
 
@@ -35,7 +34,6 @@ namespace Playback
             videoPlayer.Play();
 
             // Disable AR passthrough and set camera to render skybox
-            if (arSession) arSession.SetActive(false);
             if (arCameraManager) arCameraManager.enabled = false;
             if (mainCamera) mainCamera.clearFlags = CameraClearFlags.Skybox;
 
@@ -105,7 +103,6 @@ namespace Playback
             SetFloorAlpha(1f);
 
             // Re-enable AR passthrough and restore camera settings
-            if (arSession) arSession.SetActive(true);
             if (arCameraManager) arCameraManager.enabled = true;
             if (mainCamera) mainCamera.clearFlags = CameraClearFlags.SolidColor;
 
