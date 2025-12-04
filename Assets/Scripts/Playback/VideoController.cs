@@ -24,12 +24,12 @@ namespace Playback
         public void Awake()
         {
             RenderSettings.skybox = skyboxDefault; 
-            SetFloorAlpha(1f);
+            SetFloorAlpha(0f);
         }
 
         public void PlayVideo(string url, string mapping, string projection, string stereo)
         {   
-            SetFloorAlpha(0.1f);
+            SetFloorAlpha(0.0f);
             videoPlayer.url = url;
             videoPlayer.Play();
 
@@ -100,7 +100,7 @@ namespace Playback
         {
             videoPlayer.Stop();
             RenderSettings.skybox = skyboxDefault; 
-            SetFloorAlpha(1f);
+            SetFloorAlpha(0f);
 
             // Re-enable AR passthrough and restore camera settings
             if (arCameraManager) arCameraManager.enabled = true;

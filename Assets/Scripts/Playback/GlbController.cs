@@ -76,20 +76,14 @@ namespace Playback
                 return;
             }
 
-            // Support either the configured name or the default _PointSize id
-            if (!string.IsNullOrEmpty(pointSizeProperty) && pointsMaterial.HasProperty(pointSizeProperty))
-            {
-                pointsMaterial.SetFloat(pointSizeProperty, size);
-                Debug.Log($"[GlbController] Set '{pointSizeProperty}' to {size}.");
-            }
-            else if (pointsMaterial.HasProperty(_pointSizePropId))
+            if (pointsMaterial.HasProperty(_pointSizePropId))
             {
                 pointsMaterial.SetFloat(_pointSizePropId, size);
-                Debug.Log($"[GlbController] Set _PointSize to {size}.");
+                Debug.Log($"[GlbController] Set point size to {size}.");
             }
             else
             {
-                Debug.LogWarning($"[GlbController] Points material doesn't have '{pointSizeProperty}' or _PointSize.");
+                Debug.LogWarning($"[GlbController] Points material doesn't have _PointSize property.");
             }
         }
 
