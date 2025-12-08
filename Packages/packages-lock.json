@@ -7,6 +7,15 @@
       "dependencies": {},
       "hash": "1d8b49b3fee41c09a98141f1f1a5e4db47e14229"
     },
+    "com.mxr.unity.sdk": {
+      "version": "https://www.github.com/ManageXR/mxr-unity-sdk.git#v1.0.46",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.0.2"
+      },
+      "hash": "d6851d534f55d7eb9fbaccd28c7fd55bec97ea91"
+    },
     "com.unity.burst": {
       "version": "1.8.24",
       "depth": 1,
@@ -131,6 +140,13 @@
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.5",
       "depth": 2,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.nuget.newtonsoft-json": {
+      "version": "3.2.1",
+      "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
