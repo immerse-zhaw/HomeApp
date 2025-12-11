@@ -33,6 +33,8 @@ namespace MXR.SDK.Samples {
 
             MXRManager.System.OnRuntimeSettingsSummaryChange += OnRuntimeSettingsSummaryChange;
             MXRManager.System.OnDeviceStatusChange += OnDeviceStatusChange;
+             
+            Debug.Log("The system infor");
         }
 
         void OnDestroy() {

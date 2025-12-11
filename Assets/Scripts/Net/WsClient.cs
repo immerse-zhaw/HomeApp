@@ -4,6 +4,7 @@ using UnityEngine;
 using System;
 using System.Text;
 using Net.Messages;
+using MXR.SDK;
 
 namespace Net
 {
@@ -48,7 +49,8 @@ namespace Net
             ws.OnOpen += () =>
             {
                 SendHello();
-                Debug.Log("[WsClient] OPEN");
+                string serial = MXRManager.System?.DeviceStatus?.serial ?? "unknown";
+                Debug.Log($"[WsClient] OPEN | Serial: {serial}");
                 reconnecAttempt = 0;
             };
 
@@ -128,11 +130,14 @@ namespace Net
         private void SendHello()
         {
             var msg = new HelloMsg();
-            msg.device.androidId = SystemInfo.deviceUniqueIdentifier;
+            msg.device.serial = MXRManager.System?.DeviceStatus?.serial ?? "Not Found";
             msg.device.model     = SystemInfo.deviceModel;
             msg.app.name         = Application.identifier;
             msg.app.version      = Application.version;
             var json = JsonUtility.ToJson(msg);
+            
+            // Log serial number when sending hello
+            Debug.Log($"[WsClient] Sending Hello | Serial: {msg.device.serial}");
 
             SafeSend(json);
         }

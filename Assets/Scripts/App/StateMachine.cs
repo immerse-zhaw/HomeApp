@@ -1,4 +1,5 @@
 using UnityEngine;
+using MXR.SDK;
 
 namespace App
 {
@@ -18,7 +19,8 @@ namespace App
         public void SetState(AppState next)
         {
             if (current == next) return;
-            Debug.Log($"[StateMachine] {current} → {next}");
+            string serial = MXRManager.System?.DeviceStatus?.serial ?? "unknown";
+            Debug.Log($"[StateMachine] {current} → {next} | Serial: {serial}");
             current = next;
         }
 

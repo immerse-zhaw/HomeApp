@@ -11,6 +11,7 @@ Shader "Unlit/PointsColor"
         Pass
         {
             ZWrite On
+            ZTest LEqual
             Cull Off
 
             CGPROGRAM
@@ -47,7 +48,8 @@ Shader "Unlit/PointsColor"
                 
                 // Adaptive point size based on distance (critical for Quest performance)
                 float dist = length(UnityObjectToViewPos(v.vertex));
-                float sizeFactor = saturate(1.0 / (dist * 0.5)); // Scale down with distance
+                // More aggressive scaling to reduce overdraw when close
+                float sizeFactor = saturate(1.0 / (dist * dist * 0.1)); // Quadratic falloff
                 o.ps = _PointSize * sizeFactor;
                 
                 o.col = v.color;
@@ -57,6 +59,13 @@ Shader "Unlit/PointsColor"
             fixed4 frag (v2f i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                
+                // Optional: Discard edge pixels to reduce overdraw
+                // Uncomment if you want circular points with less overdraw
+                // float2 center = float2(0.5, 0.5);
+                // float dist = distance(i.pos.xy / i.pos.w, center);
+                // clip(0.5 - dist);
+                
                 return i.col;
             }
             ENDCG
