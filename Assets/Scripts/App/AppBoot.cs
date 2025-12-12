@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro;
 using MXR.SDK;
 
 namespace App
@@ -16,6 +17,9 @@ namespace App
         [SerializeField] private Playback.VideoController videoController;
         [SerializeField] private Playback.GlbController glbController;
 
+        [Header("UI")]
+        [SerializeField] private TMP_Text deviceStatusText;
+
         private StateMachine state;
 
         async void Awake()
@@ -30,6 +34,15 @@ namespace App
             
             // Initialize MXR and print serial number
             await MXRManager.InitAsync();
+            if (MXRManager.System == null)
+            {
+                Debug.LogError("[AppBoot] MXRManager.System not ready.");
+                return;
+            }
+
+            UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
+            MXRManager.System.OnDeviceStatusChange += UpdateDeviceStatusLabel;
+
             if (MXRManager.System.DeviceStatus != null)
             {
                 string serial = MXRManager.System.DeviceStatus.serial;
@@ -45,6 +58,33 @@ namespace App
             wsClient.Connect();
 
             Debug.Log("[AppBoot] Ready.");
+        }
+
+        void OnDestroy()
+        {
+            if (MXRManager.System != null)
+            {
+                MXRManager.System.OnDeviceStatusChange -= UpdateDeviceStatusLabel;
+            }
+        }
+
+        private void UpdateDeviceStatusLabel(DeviceStatus status)
+        {
+            if (deviceStatusText == null) return;
+
+            if (status == null)
+            {
+                deviceStatusText.text = "Device status not loaded.\nAdd Files/deviceStatus.json in the project root for Editor play, or run on a headset for live data.";
+                return;
+            }
+
+            int appCount = status.appStatuses?.Count ?? 0;
+            int videoCount = status.videoStatuses?.Count ?? 0;
+            string systemStatus = status.deviceSystemVersionStatus != null
+                ? status.deviceSystemVersionStatus.status.ToString()
+                : "unknown";
+
+            deviceStatusText.text = $"Serial: {status.serial}\nApps tracked: {appCount}\nVideos tracked: {videoCount}\nSystem status: {systemStatus}";
         }
     }
 }

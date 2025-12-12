@@ -13,8 +13,10 @@ namespace Net.Messages
     [Serializable]
     public class DeviceInfo
     {
+        public string androidId;
         public string serial;
         public string model;
+        public string systemStatus;
     }
 
     [Serializable]

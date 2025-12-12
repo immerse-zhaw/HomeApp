@@ -1,0 +1,32 @@
+[
+    {
+        "ssid": "Network1SSID",
+        "capabilities": "",
+        "signalStrength": 99,
+        "isSaved": false,
+        "isManaged": false,
+        "networkSecurityType": 0,
+        "IsEnterpriseNetwork": false,
+        "IsOpen": true
+    },
+    {
+        "ssid": "Network2SSID",
+        "capabilities": "",
+        "signalStrength": 75,
+        "isSaved": false,
+        "isManaged": false,
+        "networkSecurityType": 0,
+        "IsEnterpriseNetwork": false,
+        "IsOpen": true
+    },
+    {
+        "ssid": "Network3SSID",
+        "capabilities": "",
+        "signalStrength": 22,
+        "isSaved": false,
+        "isManaged": false,
+        "networkSecurityType": 0,
+        "IsEnterpriseNetwork": false,
+        "IsOpen": true
+    }
+]

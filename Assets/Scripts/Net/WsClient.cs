@@ -130,10 +130,18 @@ namespace Net
         private void SendHello()
         {
             var msg = new HelloMsg();
-            msg.device.serial = MXRManager.System?.DeviceStatus?.serial ?? "Not Found";
-            msg.device.model     = SystemInfo.deviceModel;
-            msg.app.name         = Application.identifier;
-            msg.app.version      = Application.version;
+            var deviceStatus = MXRManager.System?.DeviceStatus;
+
+            // Backend expects the field name androidId; populate it with the MXR serial when available.
+            msg.device.androidId    = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
+            msg.device.serial       = msg.device.androidId;
+            msg.device.model        = SystemInfo.deviceModel;
+            msg.device.systemStatus = deviceStatus?.deviceSystemVersionStatus != null
+                ? deviceStatus.deviceSystemVersionStatus.status.ToString()
+                : "unknown";
+
+            msg.app.name    = Application.identifier;
+            msg.app.version = Application.version;
             var json = JsonUtility.ToJson(msg);
             
             // Log serial number when sending hello

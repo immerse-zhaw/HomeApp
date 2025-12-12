@@ -1,0 +1,90 @@
+{
+    "locked": false,
+    "requiresAndroidDataPermission": false,
+    "hasAndroidDataPermission" : false,
+    "requiresAndroidObbPermission": false,
+    "hasAndroidObbPermission" : false,
+    
+    "appStatuses": {
+        "com.mightyimmersion.versiontest.obb": {
+            "currentVersion": 20604,
+            "currentVersionName": "2.6.4",
+            "errorCode": 997,
+            "id": "lOsnQ7MrvMfPt7ccrSMl",
+            "message": "Unable to downgrade to an app with a lower Version Code.",
+            "nextVersion": 20603,
+            "nextVersionName": "2.6.3",
+            "packageName": "com.mightyimmersion.versiontest.obb",
+            "progress": 0,
+            "status": "ERROR",
+            "timestamp": {
+                "nanoseconds": 406000000,
+                "seconds": 1655173182
+            },
+            "totalBytesDownloaded": 0,
+            "totalDownloadSize": 100
+        },
+        "com.mightyimmersion.demovr.a": {
+            "currentVersion": 10000,
+            "currentVersionName": "1.0.0",
+            "errorCode": 0,
+            "id": "lOsnQ7MrvMfPt7ccrSMl",
+            "message": "Downloading.",
+            "nextVersion": 10001,
+            "nextVersionName": "1.0.1",
+            "packageName": "com.mightyimmersion.demovr.a",
+            "progress": 24,
+            "status": "DOWNLOADING",
+            "timestamp": {
+                "nanoseconds": 406000000,
+                "seconds": 1655173182
+            },
+            "totalBytesDownloaded": 0,
+            "totalDownloadSize": 0
+        }
+    },
+    "currentForegroundApp": null,
+    "deviceSystemVersionStatus": {
+        "currentVersion": "4.5.30",
+        "errorCode": 0,
+        "progress": 71,
+        "status": "UP_TO_DATE",
+        "totalBytesDownloaded": 0,
+        "totalDownloadSize": 0
+    },
+    "fileStatuses": {},
+    "lastCheckIn": {
+        "nanoseconds": 388000000,
+        "seconds": 1655173182
+    },
+    "lastUpdate": {
+        "nanoseconds": 785000000,
+        "seconds": 1655173202
+    },
+    "picoCvControllerUpdateAvailable": false,
+    "picoGuardianHasBeenOpened": true,
+    "previousForegroundApp": {
+        "className": "com.pvr.home.RecActivity",
+        "packageName": "com.pvr.home"
+    },
+    "serial": "PA7H10DGF4140021W",
+    "videoStatuses": {
+        "eHtnJ48lW8yJPajsQdwi": {
+            "downloadSpeed": 0,
+            "errorCode": 0,
+            "id": "eHtnJ48lW8yJPajsQdwi",
+            "managedFileType": "VIDEO",
+            "name": "London on Tower Bridge 123 yup",
+            "path": "/MightyImmersion/videos/eHtnJ48lW8yJPajsQdwi",
+            "progress": 45,
+            "status": "DOWNLOADING",
+            "timeRemaining": 0,
+            "timestamp": {
+                "nanoseconds": 582000000,
+                "seconds": 1665697109
+            },
+            "totalBytesDownloaded": 5,
+            "totalDownloadSize": 100
+        }
+    }
+}
