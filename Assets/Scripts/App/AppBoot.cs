@@ -18,7 +18,9 @@ namespace App
         [SerializeField] private Playback.GlbController glbController;
 
         [Header("UI")]
-        [SerializeField] private TMP_Text deviceStatusText;
+        [SerializeField] private TMP_Text serialText;
+        [SerializeField] private TMP_Text appsTrackedText;
+        [SerializeField] private TMP_Text videosTrackedText;
 
         private StateMachine state;
 
@@ -70,21 +72,30 @@ namespace App
 
         private void UpdateDeviceStatusLabel(DeviceStatus status)
         {
-            if (deviceStatusText == null) return;
-
             if (status == null)
             {
-                deviceStatusText.text = "Device status not loaded.\nAdd Files/deviceStatus.json in the project root for Editor play, or run on a headset for live data.";
+                if (serialText != null) serialText.text = "N/A";
+                if (appsTrackedText != null) appsTrackedText.text = "0";
+                if (videosTrackedText != null) videosTrackedText.text = "0";
                 return;
             }
 
-            int appCount = status.appStatuses?.Count ?? 0;
-            int videoCount = status.videoStatuses?.Count ?? 0;
-            string systemStatus = status.deviceSystemVersionStatus != null
-                ? status.deviceSystemVersionStatus.status.ToString()
-                : "unknown";
-
-            deviceStatusText.text = $"Serial: {status.serial}\nApps tracked: {appCount}\nVideos tracked: {videoCount}\nSystem status: {systemStatus}";
+            if (serialText != null)
+            {
+                serialText.text = status.serial;
+            }
+            
+            if (appsTrackedText != null)
+            {
+                int appCount = status.appStatuses?.Count ?? 0;
+                appsTrackedText.text = appCount.ToString();
+            }
+            
+            if (videosTrackedText != null)
+            {
+                int videoCount = status.videoStatuses?.Count ?? 0;
+                videosTrackedText.text = videoCount.ToString();
+            }
         }
     }
 }
