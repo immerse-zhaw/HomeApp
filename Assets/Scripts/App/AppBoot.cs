@@ -1,6 +1,7 @@
 using UnityEngine;
 using TMPro;
 using MXR.SDK;
+using MXR.SDK.Samples;
 
 namespace App
 {
@@ -34,11 +35,34 @@ namespace App
                 return;
             }
             
+            // Request MANAGE_EXTERNAL_STORAGE permission BEFORE initializing MXR SDK
+            // This is critical for Android 11+ (Quest 3) to allow Admin App to download/install apps
+            if (MXRAndroidUtils.NeedsManageExternalStoragePermission)
+            {
+                if (!MXRAndroidUtils.IsExternalStorageManager)
+                {
+                    Debug.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
+                    FileLogger.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
+                    MXRAndroidUtils.RequestManageAppAllFilesAccessPermission();
+                    
+                    // Note: User must grant this permission in Android Settings.
+                    // The app may need to restart after granting the permission.
+                    Debug.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
+                    FileLogger.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
+                }
+                else
+                {
+                    Debug.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
+                    FileLogger.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
+                }
+            }
+            
             // Initialize MXR and print serial number
             await MXRManager.InitAsync();
             if (MXRManager.System == null)
             {
                 Debug.LogError("[AppBoot] MXRManager.System not ready.");
+                FileLogger.LogError("[AppBoot] MXRManager.System not ready.");
                 return;
             }
 
@@ -48,7 +72,21 @@ namespace App
             if (MXRManager.System.DeviceStatus != null)
             {
                 string serial = MXRManager.System.DeviceStatus.serial;
-                Debug.Log($"[AppBoot] Device Serial Number: {serial}");
+                int appStatusCount = MXRManager.System.DeviceStatus.appStatuses?.Count ?? 0;
+                int videoStatusCount = MXRManager.System.DeviceStatus.videoStatuses?.Count ?? 0;
+                
+                Debug.Log($"[AppBoot] Device Serial: {serial}");
+                Debug.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
+                Debug.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
+                
+                FileLogger.Log($"[AppBoot] Device Serial: {serial}");
+                FileLogger.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
+                FileLogger.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
+            }
+            else
+            {
+                Debug.LogError("[AppBoot] DeviceStatus is NULL - MXR not initialized properly!");
+                FileLogger.LogError("[AppBoot] DeviceStatus is NULL - MXR not initialized properly!");
             }
             state = GetComponent<StateMachine>();
 

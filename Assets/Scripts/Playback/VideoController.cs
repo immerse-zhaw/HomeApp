@@ -24,6 +24,7 @@ namespace Playback
         [SerializeField] private Camera mainCamera;
 
         [Header("Player Control UI")]
+        [SerializeField] private GameObject controlPanel;
         [SerializeField] private Slider seekSlider;
         [SerializeField] private Button playPauseButton;
         [SerializeField] private Button forwardButton;
@@ -41,6 +42,7 @@ namespace Playback
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(0f);
             SetupUI();
+            SetControlPanelVisibility(false);
         }
 
         private void SetupUI()
@@ -96,6 +98,7 @@ namespace Playback
             videoPlayer.Play();
             isPlaying = true;
             UpdatePlayPauseIcon();
+            SetControlPanelVisibility(true);
 
             // Disable AR passthrough and set camera to render skybox
             if (arCameraManager) arCameraManager.enabled = false;
@@ -169,6 +172,7 @@ namespace Playback
             videoPlayer.Stop();
             isPlaying = false;
             UpdatePlayPauseIcon();
+            SetControlPanelVisibility(false);
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(0f);
 
@@ -241,6 +245,15 @@ namespace Playback
                 playPauseIcon.sprite = videoPlayer.isPlaying ? pauseSprite : playSprite;
             }
         }
+
+        private void SetControlPanelVisibility(bool visible)
+        {
+            if (controlPanel != null)
+            {
+                controlPanel.SetActive(visible);
+            }
+        }
+
         public void SetFloorAlpha(float alpha)
         {
             if (floorRenderer != null && floorRenderer.material != null)

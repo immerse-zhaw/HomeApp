@@ -22,6 +22,7 @@ namespace MXR.SDK.Samples {
         [SerializeField] Button appsButton;
         [SerializeField] Button videosButton;
         [SerializeField] Button webXRButton;
+        [SerializeField] Button syncButton;
 
         [Header("Cell Templates")]
         [SerializeField] RuntimeAppCell appCellTemplate;
@@ -35,9 +36,47 @@ namespace MXR.SDK.Samples {
         List<WebXRAppCell> webXRAppCells = new List<WebXRAppCell>();
         List<VideoCell> videoCells = new List<VideoCell>();
         List<RuntimeAppCell> appCells = new List<RuntimeAppCell>();
+        
+        private float autoSyncInterval = 30f; // Auto-sync every 30 seconds
+        private float timeSinceLastSync = 0f;
 
         async void Start() {
             await MXRManager.InitAsync();
+            
+            // Log detailed MXR status
+            FileLogger.Log("[LibraryPanel] ===== MXR INITIALIZATION STATUS =====");
+            FileLogger.Log($"[LibraryPanel] MXRManager.System: {(MXRManager.System != null ? "OK" : "NULL")}");
+            
+            if (MXRManager.System != null) {
+                var deviceStatus = MXRManager.System.DeviceStatus;
+                var runtimeSettings = MXRManager.System.RuntimeSettingsSummary;
+                
+                FileLogger.Log($"[LibraryPanel] Device Serial: {deviceStatus?.serial ?? "NULL"}");
+                FileLogger.Log($"[LibraryPanel] RuntimeSettingsSummary: {(runtimeSettings != null ? "OK" : "NULL")}");
+                
+                if (runtimeSettings != null) {
+                    FileLogger.Log($"[LibraryPanel] Apps in RuntimeSettings: {runtimeSettings.apps?.Count ?? 0}");
+                    FileLogger.Log($"[LibraryPanel] Videos in RuntimeSettings: {runtimeSettings.videos?.Count ?? 0}");
+                    FileLogger.Log($"[LibraryPanel] WebXR in RuntimeSettings: {runtimeSettings.webXRApps?.Count ?? 0}");
+                }
+                
+                if (deviceStatus != null) {
+                    FileLogger.Log($"[LibraryPanel] App Statuses in DeviceStatus: {deviceStatus.appStatuses?.Count ?? 0}");
+                    FileLogger.Log($"[LibraryPanel] Video Statuses in DeviceStatus: {deviceStatus.videoStatuses?.Count ?? 0}");
+                    
+                    if (deviceStatus.appStatuses != null && deviceStatus.appStatuses.Count > 0) {
+                        foreach (var kvp in deviceStatus.appStatuses) {
+                            FileLogger.Log($"[LibraryPanel] App Status: {kvp.Key} = {kvp.Value?.status}");
+                        }
+                    } else {
+                        FileLogger.LogWarning("[LibraryPanel] NO APP STATUSES - Device not tracking any apps!");
+                    }
+                } else {
+                    FileLogger.LogWarning("[LibraryPanel] DeviceStatus is NULL - MXR may not be properly initialized");
+                }
+            }
+            FileLogger.Log("[LibraryPanel] ===========================================");
+            
             // Disable the cell template gameobjects
             appCellTemplate.gameObject.SetActive(false);
             webXRAppCellTemplate.gameObject.SetActive(false);
@@ -47,6 +86,7 @@ namespace MXR.SDK.Samples {
             if (appsButton != null) appsButton.onClick.AddListener(() => ShowContent(ContentType.Apps));
             if (videosButton != null) videosButton.onClick.AddListener(() => ShowContent(ContentType.Videos));
             if (webXRButton != null) webXRButton.onClick.AddListener(() => ShowContent(ContentType.WebXR));
+            if (syncButton != null) syncButton.onClick.AddListener(TriggerSync);
 
             OnRuntimeSettingsSummaryChange(MXRManager.System.RuntimeSettingsSummary);
             OnDeviceStatusChange(MXRManager.System.DeviceStatus);
@@ -57,7 +97,21 @@ namespace MXR.SDK.Samples {
             // Show apps by default
             ShowContent(ContentType.Apps);
             
+            // Trigger initial sync to check for pending installations
+            FileLogger.Log("[LibraryPanel] Triggering initial sync on startup");
+            TriggerSync();
+            
             Debug.Log("The system infor");
+        }
+        
+        void Update() {
+            // Auto-sync periodically to check for new deployments
+            timeSinceLastSync += Time.deltaTime;
+            if (timeSinceLastSync >= autoSyncInterval) {
+                timeSinceLastSync = 0f;
+                FileLogger.Log("[LibraryPanel] Auto-sync triggered");
+                TriggerSync();
+            }
         }
 
         void OnDestroy() {
@@ -67,6 +121,28 @@ namespace MXR.SDK.Samples {
             if (appsButton != null) appsButton.onClick.RemoveAllListeners();
             if (videosButton != null) videosButton.onClick.RemoveAllListeners();
             if (webXRButton != null) webXRButton.onClick.RemoveAllListeners();
+            if (syncButton != null) syncButton.onClick.RemoveAllListeners();
+        }
+
+        public void TriggerSync() {
+            FileLogger.Log("[LibraryPanel] Sync button pressed - Triggering ManageXR Admin App sync");
+            if (MXRManager.System != null) {
+                bool adminAppInstalled = MXRAndroidUtils.IsAppInstalled("com.mightyimmersion.mightyplatform.adminapp.prod");
+                FileLogger.Log($"[LibraryPanel] Admin App installed check: {adminAppInstalled}");
+                
+                MXRManager.System.Sync();
+                FileLogger.Log("[LibraryPanel] Sync() command sent to Admin App via checkDbAsync message");
+                
+                // Log device status
+                var deviceStatus = MXRManager.System.DeviceStatus;
+                if (deviceStatus != null) {
+                    FileLogger.Log($"[LibraryPanel] Device has {deviceStatus.appStatuses?.Count ?? 0} app statuses");
+                } else {
+                    FileLogger.LogWarning("[LibraryPanel] DeviceStatus is NULL - device may not be tracking apps");
+                }
+            } else {
+                FileLogger.LogWarning("[LibraryPanel] Cannot sync - MXRManager.System is null");
+            }
         }
 
         public enum ContentType {
@@ -172,7 +248,12 @@ namespace MXR.SDK.Samples {
                     instance.gameObject.SetActive(true);
                     instance.gameObject.name = x.title;
                     instance.runtimeApp = x;
-                    instance.status = MXRManager.System.DeviceStatus.AppInstallStatusForRuntimeApp(x);
+                    instance.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(x);
+                    
+                    // Log to help debug
+                    bool androidInstalled = MXRAndroidUtils.IsAppInstalled(x.packageName);
+                    FileLogger.Log($"[LibraryPanel] App: {x.title} | Package: {x.packageName} | AndroidInstalled: {androidInstalled} | HasStatus: {instance.status != null}");
+                    
                     instance.Refresh();
                     appCells.Add(instance);
                 });

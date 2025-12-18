@@ -76,6 +76,14 @@ namespace MXR.SDK.Samples {
                     updateIndicator.fillAmount = status.progress / 100f;
                     readyIndicator.enabled = false;
                 }
+            } else {
+                // No status from MXR - check if actually installed on Android
+                if (Application.platform == RuntimePlatform.Android) {
+                    bool androidInstalled = MXRAndroidUtils.IsAppInstalled(runtimeApp.packageName);
+                    if (!androidInstalled) {
+                        SetStatus("Not Installed");
+                    }
+                }
             }
         }
 
@@ -106,9 +114,41 @@ namespace MXR.SDK.Samples {
         }
 
         public void OnClick() {
-            Debug.Log("Open App " + runtimeApp.title);
-            if (Application.platform == RuntimePlatform.Android)
-                MXRAndroidUtils.LaunchRuntimeApp(runtimeApp);
+            if (runtimeApp == null) {
+                FileLogger.LogError("[RuntimeAppCell] Cannot launch: runtimeApp is null");
+                return;
+            }
+
+            FileLogger.Log($"[RuntimeAppCell] ===== APP CLICK =====");
+            FileLogger.Log($"[RuntimeAppCell] App Title: {runtimeApp.title}");
+            FileLogger.Log($"[RuntimeAppCell] Package Name: {runtimeApp.packageName}");
+            FileLogger.Log($"[RuntimeAppCell] Class Name: {runtimeApp.className}");
+            FileLogger.Log($"[RuntimeAppCell] Platform: {Application.platform}");
+            
+            if (status != null) {
+                FileLogger.Log($"[RuntimeAppCell] MXR Status: {status.status}");
+                FileLogger.Log($"[RuntimeAppCell] Current Version: {status.currentVersion}");
+                FileLogger.Log($"[RuntimeAppCell] Version Name: {status.currentVersionName}");
+            } else {
+                FileLogger.LogWarning("[RuntimeAppCell] Status is null - cannot verify installation state");
+            }
+
+            if (Application.platform == RuntimePlatform.Android) {
+                bool isInstalled = MXRAndroidUtils.IsAppInstalled(runtimeApp.packageName);
+                FileLogger.Log($"[RuntimeAppCell] Android IsAppInstalled check: {isInstalled}");
+                
+                if (isInstalled) {
+                    FileLogger.Log($"[RuntimeAppCell] Attempting to launch {runtimeApp.title}...");
+                    MXRAndroidUtils.LaunchRuntimeApp(runtimeApp);
+                    FileLogger.Log($"[RuntimeAppCell] Launch command sent for {runtimeApp.title}");
+                } else {
+                    FileLogger.LogWarning($"[RuntimeAppCell] FAILED: App {runtimeApp.title} is NOT installed according to Android!");
+                }
+            } else {
+                FileLogger.LogWarning("[RuntimeAppCell] App launching only works on Android platform");
+            }
+            
+            FileLogger.Log($"[RuntimeAppCell] Log file location: {FileLogger.GetLogPath()}");
         }
 
         bool isBeingDestroyed = false;

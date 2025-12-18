@@ -291,6 +291,11 @@ Camera:
   m_CorrespondingSourceObject: {fileID: 1767192439, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
   m_PrefabInstance: {fileID: 441087506}
   m_PrefabAsset: {fileID: 0}
+--- !u!4 &65905029 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1767192434, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+  m_PrefabInstance: {fileID: 441087506}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &125801354
 GameObject:
   m_ObjectHideFlags: 0
@@ -6527,6 +6532,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 21300000, guid: 5f4d26dedc364e74d880a7125d57119c, type: 3}
     - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+      propertyPath: controlPanel
+      value: 
+      objectReference: {fileID: 2006506699}
+    - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: floorRenderer
       value: 
       objectReference: {fileID: 1249617919}
@@ -8788,6 +8797,7 @@ GameObject:
   - component: {fileID: 2006506702}
   - component: {fileID: 2006506701}
   - component: {fileID: 2006506700}
+  - component: {fileID: 2006506706}
   m_Layer: 0
   m_Name: Video Player Control
   m_TagString: Untagged
@@ -9074,6 +9084,24 @@ Transform:
   - {fileID: 200518322}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 10, y: 0, z: 0}
+--- !u!114 &2006506706
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2006506699}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb68ae276c842204cab796dcb6ea4582, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::App.LazyFollowPanel
+  cameraTransform: {fileID: 0}
+  distanceFromCamera: 4
+  followSpeed: 2
+  rotationSpeed: 3
+  heightOffset: 0
+  activationAngle: 30
 --- !u!1 &2012364943
 GameObject:
   m_ObjectHideFlags: 0
@@ -11592,6 +11620,7 @@ GameObject:
   - component: {fileID: 2104142919332483167}
   - component: {fileID: 3030347116325969642}
   - component: {fileID: 8970215667594258628}
+  - component: {fileID: 8970215667594258629}
   m_Layer: 5
   m_Name: CoachingCardRoot
   m_TagString: Untagged
@@ -12534,6 +12563,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_HorizontalFit: 0
   m_VerticalFit: 1
+--- !u!114 &8970215667594258629
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4648701600319215733}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb68ae276c842204cab796dcb6ea4582, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::App.LazyFollowPanel
+  cameraTransform: {fileID: 65905029}
+  distanceFromCamera: 6
+  followSpeed: 2
+  rotationSpeed: 3
+  heightOffset: 0
+  activationAngle: 30
 --- !u!1 &8988470331093797871
 GameObject:
   m_ObjectHideFlags: 0
