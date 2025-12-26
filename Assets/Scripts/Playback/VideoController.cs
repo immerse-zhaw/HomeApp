@@ -6,8 +6,10 @@ using TMPro;
 
 namespace Playback
 {
-    public class VideoController : MonoBehaviour
-    {
+        public class VideoController : MonoBehaviour
+        {
+            [Header("MXR Panel Reference")]
+            [SerializeField] private GameObject mxrPanel;
         [Header("Components")]
         [SerializeField] private VideoPlayer videoPlayer;
 
@@ -100,6 +102,12 @@ namespace Playback
             UpdatePlayPauseIcon();
             SetControlPanelVisibility(true);
 
+            // Deactivate the MXR panel when video is playing
+            if (mxrPanel != null)
+            {
+                mxrPanel.SetActive(false);
+            }
+
             // Disable AR passthrough and set camera to render skybox
             if (arCameraManager) arCameraManager.enabled = false;
             if (mainCamera) mainCamera.clearFlags = CameraClearFlags.Skybox;
@@ -175,6 +183,12 @@ namespace Playback
             SetControlPanelVisibility(false);
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(0f);
+
+            // Reactivate the MXR panel when video is stopped
+            if (mxrPanel != null)
+            {
+                mxrPanel.SetActive(true);
+            }
 
             // Re-enable AR passthrough and restore camera settings
             if (arCameraManager) arCameraManager.enabled = true;

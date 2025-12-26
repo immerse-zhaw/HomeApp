@@ -8,8 +8,10 @@ using System.Collections;
 
 namespace Playback
 {
-    public class GlbController : MonoBehaviour
-    {
+        public class GlbController : MonoBehaviour
+        {
+            [Header("MXR Panel Reference")]
+            [SerializeField] private GameObject mxrPanel;
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
         [Header("Download Progress")]
@@ -31,6 +33,11 @@ namespace Playback
             Debug.Log($"[GlbController] Loading model from URL: {url}");
             StopAllCoroutines();
             ClearCurrentModel();
+            // Deactivate the MXR panel when spawning a GLB object
+            if (mxrPanel != null)
+            {
+                mxrPanel.SetActive(false);
+            }
             if (downloadProgress)
             {
                 StartCoroutine(DownloadThenInstantiate(url));
@@ -45,6 +52,11 @@ namespace Playback
         {
             Debug.Log("[GlbController] Closing model.");
             ClearCurrentModel();
+            // Reactivate the MXR panel when GLB is closed
+            if (mxrPanel != null)
+            {
+                mxrPanel.SetActive(true);
+            }
         }
 
         public void PlayAnimation(string animation)

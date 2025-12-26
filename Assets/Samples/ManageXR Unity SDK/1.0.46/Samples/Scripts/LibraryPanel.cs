@@ -221,6 +221,7 @@ namespace MXR.SDK.Samples {
                     instance.webXRApp = x;
                     instance.Refresh();
                     webXRAppCells.Add(instance);
+                    instance.gameObject.AddComponent<ForwardScrollToParent>();
                 });
         }
 
@@ -236,6 +237,7 @@ namespace MXR.SDK.Samples {
                     instance.status = MXRManager.System.DeviceStatus.FileInstallStatusForVideo(x);
                     instance.Refresh();
                     videoCells.Add(instance);
+                    instance.gameObject.AddComponent<ForwardScrollToParent>();
                 });
         }
 
@@ -249,13 +251,12 @@ namespace MXR.SDK.Samples {
                     instance.gameObject.name = x.title;
                     instance.runtimeApp = x;
                     instance.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(x);
-                    
                     // Log to help debug
                     bool androidInstalled = MXRAndroidUtils.IsAppInstalled(x.packageName);
                     FileLogger.Log($"[LibraryPanel] App: {x.title} | Package: {x.packageName} | AndroidInstalled: {androidInstalled} | HasStatus: {instance.status != null}");
-                    
                     instance.Refresh();
                     appCells.Add(instance);
+                    instance.gameObject.AddComponent<ForwardScrollToParent>();
                 });
         }
     }
