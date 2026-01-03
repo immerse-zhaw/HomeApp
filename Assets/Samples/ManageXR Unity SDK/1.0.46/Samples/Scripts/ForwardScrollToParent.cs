@@ -5,7 +5,7 @@ using UnityEngine.UI;
 namespace MXR.SDK.Samples
 {
     // Attach this to any Button inside a ScrollRect
-    public class ForwardScrollToParent : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    public class ForwardScrollToParent : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollHandler
     {
         private ScrollRect parentScrollRect;
 
@@ -30,6 +30,12 @@ namespace MXR.SDK.Samples
         {
             if (parentScrollRect != null)
                 parentScrollRect.OnEndDrag(eventData);
+        }
+
+        public void OnScroll(PointerEventData eventData)
+        {
+            if (parentScrollRect != null)
+                parentScrollRect.OnScroll(eventData);
         }
     }
 }

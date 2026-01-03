@@ -1855,7 +1855,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6598815579406187037, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -7291,7 +7291,7 @@ MonoBehaviour:
     m_Top: 0
     m_Bottom: 0
   m_ChildAlignment: 4
-  m_Spacing: -25
+  m_Spacing: -24
   m_ChildForceExpandWidth: 1
   m_ChildForceExpandHeight: 1
   m_ChildControlWidth: 0
@@ -12039,11 +12039,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.LazyFollowPanel
   cameraTransform: {fileID: 65905029}
-  distanceFromCamera: 2
+  distanceFromCamera: 10
   followSpeed: 2
   rotationSpeed: 3
   heightOffset: 0
-  activationAngle: 30
+  activationAngle: 60
 --- !u!224 &6515980929741440963
 RectTransform:
   m_ObjectHideFlags: 0

@@ -5,6 +5,7 @@ using System;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System.Collections;
+using System.Collections.Generic;
 
 namespace Playback
 {
@@ -18,7 +19,7 @@ namespace Playback
         [SerializeField] private Slider downloadProgress;
 
         [Header("Point Rendering")]
-        [SerializeField] private float defaultPointSize = 0.01f;        // Applied after load if mesh topology is Points
+        [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
 
         private static int _pointSizePropId = Shader.PropertyToID("_PointSize");
@@ -27,6 +28,15 @@ namespace Playback
         private Animation animationPlayer; // Found on instantiated model, if any
         private float autoScale = 1f;
         private float userScale = 1f;
+        private readonly List<PointCloudMeshInfo> pointCloudMeshes = new List<PointCloudMeshInfo>();
+
+        private class PointCloudMeshInfo
+        {
+            public MeshFilter Filter;
+            public MeshRenderer Renderer;
+            public Mesh OriginalMesh; // copied from loaded mesh; never mutated
+            public Mesh WorkingMesh;  // assigned to filter; rebuilt per LOD
+        }
 
         public void LoadModel(string url)
         {
@@ -108,6 +118,16 @@ namespace Playback
             }
             userScale = Mathf.Max(0f, s);
             ApplyCompositeScale();
+            
+            float totalScale = Mathf.Max(autoScale * userScale, 0.05f);
+            ApplyPointCloudLod(totalScale);
+
+            // Keep point size simple and stable; downsampling reduces overdraw instead
+            if (pointsMaterial != null && pointsMaterial.HasProperty(_pointSizePropId))
+            {
+                pointsMaterial.SetFloat(_pointSizePropId, defaultPointSize);
+            }
+            
             Debug.Log($"[GlbController] Set user scale to {s}. Combined scale: {autoScale * userScale}");
         }
 
@@ -118,6 +138,8 @@ namespace Playback
                 currentModel.Dispose();
                 currentModel = null;
             }
+
+            pointCloudMeshes.Clear();
 
             animationPlayer = null;
 
@@ -168,9 +190,14 @@ namespace Playback
 
             animationPlayer = modelRoot.GetComponentInChildren<Animation>(true);
 
-            ApplyPointCloudMaterialIfNeeded();
-            if (HasPointTopologyInChildren(modelRoot))
+            // Apply point-cloud material when the mesh topology is already points
+            bool hasPointTopology = HasPointTopologyInChildren(modelRoot);
+            
+            if (hasPointTopology)
             {
+                CachePointCloudMeshes();
+                ApplyPointCloudLod(autoScale * userScale);
+                ApplyPointCloudMaterialIfNeeded();
                 SetPointsSize(defaultPointSize);
             }
             else
@@ -252,6 +279,90 @@ namespace Playback
                     r.sharedMaterial = pointsMaterial;
                 }
             }
+        }
+
+        private void CachePointCloudMeshes()
+        {
+            pointCloudMeshes.Clear();
+            foreach (var mr in modelRoot.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var mf = mr.GetComponent<MeshFilter>();
+                if (mf == null || mf.sharedMesh == null) continue;
+                var mesh = mf.sharedMesh;
+                if (mesh.GetTopology(0) != MeshTopology.Points) continue;
+
+                // Make a copy so we never mutate the imported mesh asset
+                var originalCopy = Instantiate(mesh);
+                originalCopy.name = mesh.name + "_OriginalCopy";
+
+                var working = new Mesh();
+                working.name = mesh.name + "_WorkingLod";
+
+                mf.sharedMesh = working;
+
+                pointCloudMeshes.Add(new PointCloudMeshInfo
+                {
+                    Filter = mf,
+                    Renderer = mr,
+                    OriginalMesh = originalCopy,
+                    WorkingMesh = working
+                });
+            }
+        }
+
+        private void ApplyPointCloudLod(float totalScale)
+        {
+            if (pointCloudMeshes.Count == 0) return;
+
+            foreach (var pc in pointCloudMeshes)
+            {
+                var src = pc.OriginalMesh;
+                var dst = pc.WorkingMesh;
+                if (src == null || dst == null) continue;
+
+                var verts = src.vertices;
+                if (verts == null || verts.Length == 0) continue;
+
+                int targetCount = ComputeTargetPointCount(verts.Length, totalScale);
+                targetCount = Mathf.Clamp(targetCount, 256, verts.Length);
+
+                int stride = Mathf.Max(1, verts.Length / targetCount);
+                int finalCount = (verts.Length + stride - 1) / stride;
+
+                // Allocate buffers
+                var outVerts = new Vector3[finalCount];
+                var srcColors = src.colors;
+                var outColors = (srcColors != null && srcColors.Length > 0) ? new Color[finalCount] : null;
+                var srcUV = src.uv;
+                var outUV = (srcUV != null && srcUV.Length > 0) ? new Vector2[finalCount] : null;
+
+                int o = 0;
+                for (int i = 0; i < verts.Length && o < finalCount; i += stride)
+                {
+                    outVerts[o] = verts[i];
+                    if (outColors != null && i < srcColors.Length) outColors[o] = srcColors[i];
+                    if (outUV != null && i < srcUV.Length) outUV[o] = srcUV[i];
+                    o++;
+                }
+
+                dst.Clear();
+                dst.vertices = outVerts;
+                if (outColors != null) dst.colors = outColors;
+                if (outUV != null) dst.uv = outUV;
+
+                var indices = new int[o];
+                for (int k = 0; k < o; k++) indices[k] = k;
+                dst.SetIndices(indices, MeshTopology.Points, 0);
+                dst.RecalculateBounds();
+            }
+        }
+
+        private int ComputeTargetPointCount(int originalCount, float totalScale)
+        {
+            // More downsampling when very small; restore more points as scale grows
+            if (totalScale <= 0.2f) return Mathf.Min(originalCount, 8000);
+            if (totalScale <= 0.5f) return Mathf.Min(originalCount, 16000);
+            return Mathf.Min(originalCount, 32000);
         }
 
         private static bool HasPointTopologyInChildren(Transform root)
@@ -406,5 +517,6 @@ namespace Playback
 
             Debug.Log("[GlbController] Model is ready.");
         }
+        
     }
 }

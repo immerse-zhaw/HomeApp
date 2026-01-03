@@ -48,9 +48,10 @@ Shader "Unlit/PointsColor"
                 
                 // Adaptive point size based on distance (critical for Quest performance)
                 float dist = length(UnityObjectToViewPos(v.vertex));
-                // More aggressive scaling to reduce overdraw when close
-                float sizeFactor = saturate(1.0 / (dist * dist * 0.1)); // Quadratic falloff
-                o.ps = _PointSize * sizeFactor;
+                float sizeFactor = saturate(1.0 / (dist * dist * 0.08)); // Slightly more aggressive falloff
+
+                // Keep a floor so points do not disappear when far or tiny
+                o.ps = max(_PointSize * sizeFactor, 0.6);
                 
                 o.col = v.color;
                 return o;
