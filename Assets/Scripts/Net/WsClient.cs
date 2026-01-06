@@ -154,7 +154,23 @@ namespace Net
         {
             if (shuttingDown || !IsOpen) return;
             _ = ws.SendText(text);
-            Debug.Log($"[WsClient] >> {text}");
+            // Don't log frequent ping messages to avoid spamming the console.
+            if (!text.Contains("\"type\":\"ping\""))
+            {
+                Debug.Log($"[WsClient] >> {text}");
+            }
+        }
+
+        // Send a simple status message over the websocket. Example: {"type":"status","status":"Playing video: file.mp4"}
+        public void SendStatus(string status)
+        {
+            if (shuttingDown || !IsOpen) return;
+            // Escape any quotes in the status so the JSON stays valid
+            var safeStatus = status != null ? status.Replace("\"", "\\\"") : "";
+            var json = "{\"type\":\"status\",\"status\":\"" + safeStatus + "\"}";
+            // Log a readable status message and send JSON
+            Debug.Log($"[WsClient] Sending status | {status}");
+            SafeSend(json);
         }
     }
 }

@@ -6,13 +6,14 @@ using UnityEngine.UI;
 using UnityEngine.Networking;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 
 namespace Playback
 {
         public class GlbController : MonoBehaviour
         {
-            [Header("MXR Panel Reference")]
-            [SerializeField] private GameObject mxrPanel;
+        [Header("MXR Panel Reference")]
+        [SerializeField] private GameObject mxrPanel;
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
         [Header("Download Progress")]
@@ -29,6 +30,8 @@ namespace Playback
         private float autoScale = 1f;
         private float userScale = 1f;
         private readonly List<PointCloudMeshInfo> pointCloudMeshes = new List<PointCloudMeshInfo>();
+        // Keep the URL of the model being loaded so we can report filename when ready
+        private string currentModelUrl;
 
         private class PointCloudMeshInfo
         {
@@ -43,6 +46,9 @@ namespace Playback
             Debug.Log($"[GlbController] Loading model from URL: {url}");
             StopAllCoroutines();
             ClearCurrentModel();
+            // Keep this so we can report filename later
+            currentModelUrl = url;
+            
             // Deactivate the MXR panel when spawning a GLB object
             if (mxrPanel != null)
             {
@@ -116,10 +122,24 @@ namespace Playback
                 Debug.LogWarning("[GlbController] modelRoot is not assigned.");
                 return;
             }
-            userScale = Mathf.Max(0f, s);
+            // Remap external scale: 1x means fit in 1x1x1, 10x means 10x bigger than that
+            float mappedScale = 1f;
+            if (s <= 1.0f)
+            {
+                // 0.1x to 1x: map linearly (0.1 to 1)
+                mappedScale = Mathf.Lerp(0.1f, 1f, (s - 0.1f) / 0.9f);
+            }
+            else
+            {
+                // 1x to 10x: map linearly (1 to 10)
+                mappedScale = Mathf.Lerp(1f, 10f, (s - 1f) / 9f);
+            }
+            userScale = Mathf.Max(0f, mappedScale);
             ApplyCompositeScale();
-            
-            float totalScale = Mathf.Max(autoScale * userScale, 0.05f);
+
+            // Use exact combined scale for LOD computation (no high floor) so LOD matches user intent
+            float totalScale = autoScale * userScale;
+            if (totalScale <= 0f) totalScale = 1e-6f;
             ApplyPointCloudLod(totalScale);
 
             // Keep point size simple and stable; downsampling reduces overdraw instead
@@ -127,8 +147,8 @@ namespace Playback
             {
                 pointsMaterial.SetFloat(_pointSizePropId, defaultPointSize);
             }
-            
-            Debug.Log($"[GlbController] Set user scale to {s}. Combined scale: {autoScale * userScale}");
+
+            Debug.Log($"[GlbController] Set user scale to {s} (mapped: {mappedScale}). Combined scale: {autoScale * userScale}");
         }
 
         private void ClearCurrentModel()
@@ -168,6 +188,8 @@ namespace Playback
         {
             currentModel?.Dispose();
             currentModel = new GltfImport();
+            // Log the URL being streamed/loaded so we can identify the source file
+            Debug.Log($"[GlbController] Streaming/Loading model from URL: {url}");
             bool success = await currentModel.Load(new Uri(url));
             if (!success)
             {
@@ -193,6 +215,16 @@ namespace Playback
             // Apply point-cloud material when the mesh topology is already points
             bool hasPointTopology = HasPointTopologyInChildren(modelRoot);
             
+            // Send simple status over websocket indicating what is playing (point cloud vs 3D object)
+            var ws = FindObjectOfType<Net.WsClient>();
+            if (ws != null && !string.IsNullOrEmpty(currentModelUrl))
+            {
+                var fileName = Path.GetFileName(currentModelUrl);
+                var status = hasPointTopology ? $"Playing point cloud: {fileName}" : $"Playing 3D object: {fileName}";
+                Debug.Log($"[GlbController] Sending status: {status}");
+                ws.SendStatus(status);
+            }
+
             if (hasPointTopology)
             {
                 CachePointCloudMeshes();
@@ -308,14 +340,61 @@ namespace Playback
                     WorkingMesh = working
                 });
             }
+
+            // Show total original points in debug console
+            int totalPoints = 0;
+            foreach (var pc in pointCloudMeshes)
+                if (pc.OriginalMesh != null && pc.OriginalMesh.vertexCount > 0)
+                    totalPoints += pc.OriginalMesh.vertexCount;
+            Debug.Log($"[GlbController] Loaded point cloud(s) with {totalPoints} points");
         }
 
         private void ApplyPointCloudLod(float totalScale)
         {
             if (pointCloudMeshes.Count == 0) return;
-
+            // Compute global target across all point-cloud meshes so totals match requested budget
+            int totalOriginal = 0;
             foreach (var pc in pointCloudMeshes)
             {
+                if (pc.OriginalMesh != null) totalOriginal += pc.OriginalMesh.vertexCount;
+            }
+            if (totalOriginal == 0) return;
+
+            int globalTarget = ComputeTargetPointCount(totalOriginal, totalScale);
+
+            // Allocate per-mesh targets proportionally, then adjust to match globalTarget exactly
+            var perMeshTargets = new int[pointCloudMeshes.Count];
+            int allocated = 0;
+            for (int i = 0; i < pointCloudMeshes.Count; i++)
+            {
+                var pc = pointCloudMeshes[i];
+                int orig = pc.OriginalMesh != null ? pc.OriginalMesh.vertexCount : 0;
+                if (orig == 0) { perMeshTargets[i] = 0; continue; }
+                perMeshTargets[i] = Mathf.Max(256, Mathf.RoundToInt(orig / (float)totalOriginal * globalTarget));
+                perMeshTargets[i] = Mathf.Min(perMeshTargets[i], orig);
+                allocated += perMeshTargets[i];
+            }
+
+            // Fix allocation rounding errors: distribute remainder
+            int remainder = globalTarget - allocated;
+            int idx = 0;
+            while (remainder > 0)
+            {
+                if (idx >= pointCloudMeshes.Count) idx = 0;
+                var pc = pointCloudMeshes[idx];
+                int orig = pc.OriginalMesh != null ? pc.OriginalMesh.vertexCount : 0;
+                if (orig > perMeshTargets[idx])
+                {
+                    perMeshTargets[idx]++;
+                    remainder--;
+                }
+                idx++;
+            }
+
+            int totalNewPoints = 0;
+            for (int i = 0; i < pointCloudMeshes.Count; i++)
+            {
+                var pc = pointCloudMeshes[i];
                 var src = pc.OriginalMesh;
                 var dst = pc.WorkingMesh;
                 if (src == null || dst == null) continue;
@@ -323,26 +402,25 @@ namespace Playback
                 var verts = src.vertices;
                 if (verts == null || verts.Length == 0) continue;
 
-                int targetCount = ComputeTargetPointCount(verts.Length, totalScale);
+                int targetCount = perMeshTargets[i];
                 targetCount = Mathf.Clamp(targetCount, 256, verts.Length);
 
-                int stride = Mathf.Max(1, verts.Length / targetCount);
-                int finalCount = (verts.Length + stride - 1) / stride;
+                // Evenly sample to get close to the requested targetCount. This produces a smooth,
+                // monotonic progression up to the requested budget (or original vertex count).
+                int desired = Mathf.Min(targetCount, verts.Length);
 
-                // Allocate buffers
-                var outVerts = new Vector3[finalCount];
+                var outVerts = new Vector3[desired];
                 var srcColors = src.colors;
-                var outColors = (srcColors != null && srcColors.Length > 0) ? new Color[finalCount] : null;
+                var outColors = (srcColors != null && srcColors.Length > 0) ? new Color[desired] : null;
                 var srcUV = src.uv;
-                var outUV = (srcUV != null && srcUV.Length > 0) ? new Vector2[finalCount] : null;
+                var outUV = (srcUV != null && srcUV.Length > 0) ? new Vector2[desired] : null;
 
-                int o = 0;
-                for (int i = 0; i < verts.Length && o < finalCount; i += stride)
+                for (int k = 0; k < desired; k++)
                 {
-                    outVerts[o] = verts[i];
-                    if (outColors != null && i < srcColors.Length) outColors[o] = srcColors[i];
-                    if (outUV != null && i < srcUV.Length) outUV[o] = srcUV[i];
-                    o++;
+                    int srcIdx = Mathf.Min(verts.Length - 1, Mathf.FloorToInt(k * (verts.Length / (float)desired)));
+                    outVerts[k] = verts[srcIdx];
+                    if (outColors != null && srcIdx < srcColors.Length) outColors[k] = srcColors[srcIdx];
+                    if (outUV != null && srcIdx < srcUV.Length) outUV[k] = srcUV[srcIdx];
                 }
 
                 dst.Clear();
@@ -350,19 +428,44 @@ namespace Playback
                 if (outColors != null) dst.colors = outColors;
                 if (outUV != null) dst.uv = outUV;
 
-                var indices = new int[o];
-                for (int k = 0; k < o; k++) indices[k] = k;
+                var indices = new int[desired];
+                for (int k = 0; k < desired; k++) indices[k] = k;
                 dst.SetIndices(indices, MeshTopology.Points, 0);
                 dst.RecalculateBounds();
+
+                totalNewPoints += desired;
             }
+
+            Debug.Log($"[GlbController] Current point cloud LOD: {totalNewPoints} points");
         }
 
         private int ComputeTargetPointCount(int originalCount, float totalScale)
         {
-            // More downsampling when very small; restore more points as scale grows
-            if (totalScale <= 0.2f) return Mathf.Min(originalCount, 8000);
-            if (totalScale <= 0.5f) return Mathf.Min(originalCount, 16000);
-            return Mathf.Min(originalCount, 32000);
+            // Map directly from the user scale: 1x -> 30k, 5x -> 500k, 10x -> 1.5M
+            float us = Mathf.Max(userScale, 0.001f);
+
+            int target;
+            if (us <= 1f)
+            {
+                target = 30000;
+            }
+            else if (us <= 5f)
+            {
+                float t = (us - 1f) / 4f;
+                target = Mathf.RoundToInt(Mathf.Lerp(30000, 500000, t));
+            }
+            else if (us <= 10f)
+            {
+                float t = (us - 5f) / 5f;
+                target = Mathf.RoundToInt(Mathf.Lerp(500000, 1500000, t));
+            }
+            else
+            {
+                target = 1500000;
+            }
+
+            // Never exceed original count
+            return Mathf.Min(target, originalCount);
         }
 
         private static bool HasPointTopologyInChildren(Transform root)
@@ -471,6 +574,8 @@ namespace Playback
                 downloadProgress.value = 0f;
             }
 
+            // Log the URL being downloaded/streamed so we can inspect the source
+            Debug.Log($"[GlbController] Downloading model from URL: {url}");
             using (var uwr = UnityWebRequest.Get(url))
             {
                 uwr.SendWebRequest();

@@ -3,6 +3,7 @@ using UnityEngine.Video;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.UI;
 using TMPro;
+using System.IO;
 
 namespace Playback
 {
@@ -106,6 +107,16 @@ namespace Playback
             if (mxrPanel != null)
             {
                 mxrPanel.SetActive(false);
+            }
+
+            // Send status to websocket: "Playing video: <filename>"
+            var ws = FindObjectOfType<Net.WsClient>();
+            if (ws != null)
+            {
+                var fileName = Path.GetFileName(url);
+                var status = $"Playing video: {fileName}";
+                Debug.Log($"[VideoController] Sending status: {status}");
+                ws.SendStatus(status);
             }
 
             // Disable AR passthrough and set camera to render skybox
