@@ -1,0 +1,161 @@
+using UnityEngine;
+using UnityEngine.XR;
+
+namespace Playback
+{
+    // Simple controller that moves the currently-loaded GLB (via GlbController.ModelRoot)
+    // Left thumbstick: move in X/Z plane relative to camera forward/right
+    // Right thumbstick Y: raise/lower object's Y position (height)
+    public class GlbMover : MonoBehaviour
+    {
+        [Header("Movement Settings")]
+        [SerializeField] private float moveSpeed = 1.0f;      // units per second
+        [SerializeField] private float heightSpeed = 0.5f;    // units per second for height changes
+        [SerializeField] private float deadzone = 0.15f;      // thumbstick deadzone
+        [SerializeField] private float minHeight = -5f;
+        [SerializeField] private float maxHeight = 5f;
+        [SerializeField] private bool enableEditorControls = true; // allow keyboard fallback for testing in Editor
+
+        private Playback.GlbController glbController;
+
+        void Start()
+        {
+            glbController = FindObjectOfType<Playback.GlbController>();
+            if (glbController == null)
+            {
+                Debug.LogWarning("[GlbMover] No GlbController found in scene.");
+            }
+        }
+
+        void Update()
+        {
+            if (glbController == null) return;
+            var root = glbController.ModelRoot;
+            if (root == null) return;
+
+            // Read left thumbstick (left hand) for planar movement
+            var left = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            Vector2 leftAxis = default;
+            bool leftValid = left.isValid;
+            if (leftValid)
+                left.TryGetFeatureValue(CommonUsages.primary2DAxis, out leftAxis);
+
+            // Read right thumbstick (right hand) for height control (we only use Y)
+            var right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            Vector2 rightAxis = default;
+            bool rightValid = right.isValid;
+            if (rightValid)
+                right.TryGetFeatureValue(CommonUsages.primary2DAxis, out rightAxis);
+
+            // If the right primary axis doesn't contain Y input, try secondary2DAxis (XR Simulator sometimes maps here)
+            if (rightValid && Mathf.Abs(rightAxis.y) < Mathf.Epsilon)
+            {
+                if (right.TryGetFeatureValue(CommonUsages.secondary2DAxis, out Vector2 sec))
+                {
+                    if (Mathf.Abs(sec.y) > Mathf.Abs(rightAxis.y)) rightAxis.y = sec.y;
+                }
+            }
+
+            // Editor fallback: safely attempt to read keyboard input. Try the old Input API first in a try/catch,
+            // and if it throws (Input System is active), attempt to use the new Input System via reflection.
+            if (enableEditorControls)
+            {
+                if ((!leftValid || leftAxis == Vector2.zero) || !rightValid)
+                {
+                    if (TryGetEditorInput(out Vector2 fallbackLeft, out float fallbackRightY))
+                    {
+                        // Only override axes that were not provided by XR device
+                        if (!leftValid || leftAxis == Vector2.zero) leftAxis = fallbackLeft;
+                        if (!rightValid) rightAxis.y = fallbackRightY;
+                    }
+                }
+            }
+
+            // Apply deadzone (note: we intentionally ignore rightAxis.x - right stick only controls height)
+            if (Mathf.Abs(leftAxis.x) < deadzone) leftAxis.x = 0f;
+            if (Mathf.Abs(leftAxis.y) < deadzone) leftAxis.y = 0f;
+            if (Mathf.Abs(rightAxis.y) < deadzone) rightAxis.y = 0f;
+
+            // No input? nothing to do
+            if (leftAxis == Vector2.zero && rightAxis.y == 0f) return;
+
+            // Debug input for troubleshooting (include device validity flags)
+            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightY: {rightAxis.y} (valid:{rightValid})");
+
+            // Movement direction relative to camera forward/right projected to XZ plane
+            Vector3 forward = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized : Vector3.forward;
+            Vector3 rightDir = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.right, Vector3.up).normalized : Vector3.right;
+
+            // Compute planar movement (X/Z)
+            Vector3 planarDelta = (forward * leftAxis.y + rightDir * leftAxis.x) * moveSpeed * Time.deltaTime;
+
+            // Compute height change (Y)
+            float newY = root.position.y + rightAxis.y * heightSpeed * Time.deltaTime;
+            newY = Mathf.Clamp(newY, minHeight, maxHeight);
+
+            // Apply position
+            Vector3 newPos = root.position + planarDelta;
+            newPos.y = newY;
+            root.position = newPos;
+        }
+
+        // Try to get keyboard fallback input in editor. Works with both the old Input API and the new Input System (via reflection).
+        private bool TryGetEditorInput(out Vector2 leftAxis, out float rightY)
+        {
+            leftAxis = Vector2.zero;
+            rightY = 0f;
+
+            // First try the old Input API (may throw if the Input System package is active)
+            try
+            {
+                float h = Input.GetAxis("Horizontal");
+                float v = Input.GetAxis("Vertical");
+                leftAxis = new Vector2(h, v);
+
+                float r = 0f;
+                if (Input.GetKey(KeyCode.E)) r += 1f;
+                if (Input.GetKey(KeyCode.Q)) r -= 1f;
+                rightY = r;
+
+                return leftAxis != Vector2.zero || rightY != 0f;
+            }
+            catch
+            {
+                // Old Input API not available (Input System active). Fall back to the new Input System via reflection.
+                try
+                {
+                    var keyboardType = System.Type.GetType("UnityEngine.InputSystem.Keyboard, Unity.InputSystem");
+                    if (keyboardType == null) return false;
+
+                    var currentProp = keyboardType.GetProperty("current", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+                    var keyboard = currentProp?.GetValue(null);
+                    if (keyboard == null) return false;
+
+                    bool w = (bool)keyboard.GetType().GetProperty("wKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("wKey").GetValue(keyboard));
+                    bool s = (bool)keyboard.GetType().GetProperty("sKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("sKey").GetValue(keyboard));
+                    bool a = (bool)keyboard.GetType().GetProperty("aKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("aKey").GetValue(keyboard));
+                    bool d = (bool)keyboard.GetType().GetProperty("dKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("dKey").GetValue(keyboard));
+                    bool e = (bool)keyboard.GetType().GetProperty("eKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("eKey").GetValue(keyboard));
+                    bool q = (bool)keyboard.GetType().GetProperty("qKey").GetValue(keyboard).GetType().GetProperty("isPressed").GetValue(keyboard.GetType().GetProperty("qKey").GetValue(keyboard));
+
+                    float hx = 0f;
+                    float vy = 0f;
+                    if (a) hx -= 1f;
+                    if (d) hx += 1f;
+                    if (w) vy += 1f;
+                    if (s) vy -= 1f;
+                    if (e) rightY += 1f;
+                    if (q) rightY -= 1f;
+
+                    leftAxis = new Vector2(hx, vy);
+                    return leftAxis != Vector2.zero || rightY != 0f;
+                }
+                catch
+                {
+                    // Failed to get any fallback input
+                    return false;
+                }
+            }
+        }
+    }
+}

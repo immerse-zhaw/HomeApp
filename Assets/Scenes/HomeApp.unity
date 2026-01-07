@@ -6951,7 +6951,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1608167975670771052, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1872128170}
   m_SourcePrefab: {fileID: 100100000, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
 --- !u!1 &1467773659
 GameObject:
@@ -8685,6 +8688,29 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1843339243}
   m_CullTransparentMesh: 0
+--- !u!1 &1872128167 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1608167975670771052, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+  m_PrefabInstance: {fileID: 1456686925}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1872128170
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1872128167}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9e10e6a3cc74f6344a89352d048cc2ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Playback.GlbMover
+  moveSpeed: 1
+  heightSpeed: 0.5
+  deadzone: 0.15
+  minHeight: -5
+  maxHeight: 5
+  enableEditorControls: 1
 --- !u!1 &1908203880
 GameObject:
   m_ObjectHideFlags: 0

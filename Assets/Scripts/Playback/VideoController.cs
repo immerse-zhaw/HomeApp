@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Video;
+using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.UI;
 using TMPro;
@@ -39,6 +40,7 @@ namespace Playback
 
         private bool isPlaying = false;
         private bool isDragging = false;
+        private bool prevLeftPrimaryPressed = false; // for edge-detecting left primary button presses
 
         public void Awake()
         {
@@ -74,6 +76,22 @@ namespace Playback
 
                 // Update time text
                 UpdateTimeText();
+            }
+
+            // Left-hand primary button toggles the control panel when a video is playing
+            if (controlPanel != null && isPlaying)
+            {
+                var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+                if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryPressed))
+                {
+                    if (primaryPressed && !prevLeftPrimaryPressed)
+                    {
+                        bool visible = controlPanel.activeSelf;
+                        SetControlPanelVisibility(!visible);
+                        Debug.Log($"[VideoController] Toggled control panel -> {!visible} via left primary button.");
+                    }
+                    prevLeftPrimaryPressed = primaryPressed;
+                }
             }
         }
 

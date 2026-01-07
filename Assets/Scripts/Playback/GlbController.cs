@@ -33,6 +33,9 @@ namespace Playback
         // Keep the URL of the model being loaded so we can report filename when ready
         private string currentModelUrl;
 
+        // Expose model root so other scripts (e.g., GlbMover) can manipulate the loaded model.
+        public Transform ModelRoot => modelRoot;
+
         private class PointCloudMeshInfo
         {
             public MeshFilter Filter;
