@@ -90,8 +90,18 @@ namespace App
             }
             state = GetComponent<StateMachine>();
 
-            wsClient.Init(projectSettings);
+            wsClient.Init(projectSettings, state);
             commandRouter.Init(projectSettings, state, videoController, glbController);
+
+            // Wire state and cross-control between playback components
+            if (videoController != null)
+            {
+                videoController.Inject(state, glbController);
+            }
+            if (glbController != null)
+            {
+                glbController.Inject(state, videoController);
+            }
 
 
             wsClient.OnMessage += commandRouter.Handle;

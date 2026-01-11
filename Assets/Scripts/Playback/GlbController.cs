@@ -7,6 +7,7 @@ using UnityEngine.Networking;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using App;
 
 namespace Playback
 {
@@ -32,6 +33,8 @@ namespace Playback
         private readonly List<PointCloudMeshInfo> pointCloudMeshes = new List<PointCloudMeshInfo>();
         // Keep the URL of the model being loaded so we can report filename when ready
         private string currentModelUrl;
+        private StateMachine stateMachine;
+        private Playback.VideoController videoController;
 
         // Expose model root so other scripts (e.g., GlbMover) can manipulate the loaded model.
         public Transform ModelRoot => modelRoot;
@@ -47,6 +50,9 @@ namespace Playback
         public void LoadModel(string url)
         {
             Debug.Log($"[GlbController] Loading model from URL: {url}");
+            // Ensure video is stopped before loading a model
+            videoController?.StopVideo();
+            stateMachine?.SetState(AppState.Loading);
             StopAllCoroutines();
             ClearCurrentModel();
             // Keep this so we can report filename later
@@ -75,6 +81,11 @@ namespace Playback
             if (mxrPanel != null)
             {
                 mxrPanel.SetActive(true);
+            }
+            // Set state to Idle when model is closed
+            if (stateMachine != null && stateMachine.Current == AppState.ShowingModel)
+            {
+                stateMachine.SetState(AppState.Idle);
             }
         }
 
@@ -238,6 +249,16 @@ namespace Playback
             else
             {
                 SetupGlbPipeline(modelRoot);
+            }
+
+            if (stateMachine != null)
+            {
+                Debug.Log($"[GlbController] Setting state to ShowingModel. Current state: {stateMachine.Current}");
+                stateMachine.SetState(AppState.ShowingModel);
+            }
+            else
+            {
+                Debug.LogError("[GlbController] StateMachine is NULL! Cannot set state to ShowingModel.");
             }
         }
 
@@ -623,8 +644,14 @@ namespace Playback
                 downloadProgress.gameObject.SetActive(false);
             }
 
-            Debug.Log("[GlbController] Model is ready.");
+            Debug.Log("[GlbController] Model download complete. Model is ready.");
         }
-        
+
+        public void Inject(StateMachine sm, Playback.VideoController vc)
+        {
+            stateMachine = sm;
+            videoController = vc;
+            Debug.Log($"[GlbController] Injected StateMachine: {stateMachine != null}, VideoController: {videoController != null}");
+        }
     }
 }

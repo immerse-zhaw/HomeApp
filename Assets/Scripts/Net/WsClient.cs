@@ -12,6 +12,7 @@ namespace Net
     {
         private ProjectSettings settings;
         private WebSocket ws;
+        private StateMachine state;
 
         private float heartbeatAccumMs;
         private int reconnecAttempt;
@@ -21,9 +22,10 @@ namespace Net
 
         public event Action<string> OnMessage;
 
-        public void Init(ProjectSettings s)
+        public void Init(ProjectSettings s, StateMachine sm)
         {
             settings = s;
+            state = sm;
             Debug.Log("[WsClient] Initialized.");
         }
 
@@ -93,8 +95,26 @@ namespace Net
             if (heartbeatAccumMs >= settings.PingIntervalMs)
             {
                 heartbeatAccumMs = 0f;
-                SafeSend("{\"type\":\"ping\"}");
+                // Use the same serial logic as HelloMsg
+                var deviceStatus = MXRManager.System?.DeviceStatus;
+                string serial = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
+                string status = GetStatusString();
+                string pingJson = $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\"}}";
+                SafeSend(pingJson);
             }
+        }
+
+        private string GetStatusString()
+        {
+            var current = state != null ? state.Current : AppState.Idle;
+            string statusString = current switch
+            {
+                AppState.PlayingVideo => "video",
+                AppState.ShowingModel => "model",
+                _ => "home"
+            };
+            Debug.Log($"[WsClient] GetStatusString: Current state = {current}, Returning: {statusString}");
+            return statusString;
         }
 
         void OnApplicationQuit()
@@ -154,11 +174,7 @@ namespace Net
         {
             if (shuttingDown || !IsOpen) return;
             _ = ws.SendText(text);
-            // Don't log frequent ping messages to avoid spamming the console.
-            if (!text.Contains("\"type\":\"ping\""))
-            {
-                Debug.Log($"[WsClient] >> {text}");
-            }
+            Debug.Log($"[WsClient] >> {text}");
         }
 
         // Send a simple status message over the websocket. Example: {"type":"status","status":"Playing video: file.mp4"}

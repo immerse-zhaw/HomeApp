@@ -33,9 +33,16 @@ namespace Net.Messages
     }
 
     [Serializable]
+    public class Home
+    {
+        public string type = "home";
+    }
+
+    [Serializable]
     public class PlayVideoCmd
     {
         public string type = "video.play";
+        public string name;
         public string url;
         public string mapping = "equirectangular"; // "equirectangular" | "cubemap"
         public string projection = "360"; // "360" | "180"
@@ -80,6 +87,7 @@ namespace Net.Messages
     public class LoadModelCmd
     {
         public string type = "model.load";
+        public string name;
         public string url;
     }
 
@@ -94,6 +102,12 @@ namespace Net.Messages
     {
         public string type = "model.playAnimation";
         public string name;
+    }
+
+    [Serializable]
+    public class ModelStopAnimationCmd
+    {
+        public string type = "model.stopAnimation";
     }
 
     [Serializable]

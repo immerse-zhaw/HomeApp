@@ -5,6 +5,7 @@ using UnityEngine.XR.ARFoundation;
 using UnityEngine.UI;
 using TMPro;
 using System.IO;
+using App;
 
 namespace Playback
 {
@@ -41,6 +42,16 @@ namespace Playback
         private bool isPlaying = false;
         private bool isDragging = false;
         private bool prevLeftPrimaryPressed = false; // for edge-detecting left primary button presses
+
+        // Injected references
+        private StateMachine stateMachine;
+        private GlbController glbController;
+
+        public void Inject(StateMachine sm, GlbController gc)
+        {
+            stateMachine = sm;
+            glbController = gc;
+        }
 
         public void Awake()
         {
@@ -114,12 +125,30 @@ namespace Playback
 
         public void PlayVideo(string url, string mapping, string projection, string stereo)
         {   
+            // Ensure GLB content is closed before playing video
+            if (glbController != null)
+            {
+                glbController.CloseModel();
+
+                // Double-check no children remain under model root
+                var root = glbController.ModelRoot;
+                if (root != null && root.childCount > 0)
+                {
+                    for (int i = root.childCount - 1; i >= 0; i--)
+                    {
+                        Destroy(root.GetChild(i).gameObject);
+                    }
+                }
+            }
+
             SetFloorAlpha(0.0f);
             videoPlayer.url = url;
             videoPlayer.Play();
             isPlaying = true;
             UpdatePlayPauseIcon();
             SetControlPanelVisibility(true);
+
+            stateMachine?.SetState(AppState.PlayingVideo);
 
             // Deactivate the MXR panel when video is playing
             if (mxrPanel != null)
@@ -201,6 +230,7 @@ namespace Playback
             videoPlayer.Play();
             isPlaying = true;
             UpdatePlayPauseIcon();
+            stateMachine?.SetState(AppState.PlayingVideo);
             Debug.Log("[VideoController] Resuming video.");
         }
 
@@ -223,6 +253,10 @@ namespace Playback
             if (arCameraManager) arCameraManager.enabled = true;
             if (mainCamera) mainCamera.clearFlags = CameraClearFlags.SolidColor;
 
+            if (stateMachine != null && stateMachine.Current == AppState.PlayingVideo)
+            {
+                stateMachine.SetState(AppState.Idle);
+            }
             Debug.Log("[VideoController] Stopping video.");
         }
 

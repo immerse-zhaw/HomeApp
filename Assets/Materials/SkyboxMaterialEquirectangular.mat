@@ -117,7 +117,7 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _ImageType: 0
-    - _Layout: 0
+    - _Layout: 2
     - _Mapping: 1
     - _Metallic: 0
     - _MirrorOnBack: 0
