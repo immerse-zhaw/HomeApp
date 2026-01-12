@@ -39,6 +39,7 @@ namespace Playback
             else
             {
                 glbController.SetScaleUiVisible(false);
+                glbController.UpdateControlModeCard(false);
             }
         }
 
@@ -49,6 +50,7 @@ namespace Playback
             if (!glbController.HasActiveModel())
             {
                 glbController.SetScaleUiVisible(false);
+                glbController.SetControlModeCardVisible(false);
                 return;
             }
             var root = glbController.ModelRoot;
@@ -109,6 +111,13 @@ namespace Playback
                 prevRightPrimaryPressed = rightPrimary;
             }
 
+            // If we're in Scale mode, block all position controls (planar + height)
+            if (controlMode == ControlMode.Scale)
+            {
+                leftAxis = Vector2.zero;
+                rightAxis.y = 0f; // block height changes
+            }
+
             // No input? nothing to do
             bool hasPlanarInput = leftAxis != Vector2.zero;
             bool hasHeightInput = Mathf.Abs(rightAxis.y) > Mathf.Epsilon;
@@ -161,6 +170,7 @@ namespace Playback
             if (glbController != null)
             {
                 glbController.SetScaleUiVisible(controlMode == ControlMode.Scale);
+                glbController.UpdateControlModeCard(controlMode == ControlMode.Scale);
             }
         }
 

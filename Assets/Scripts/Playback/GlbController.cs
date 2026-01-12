@@ -28,6 +28,10 @@ namespace Playback
         [SerializeField] private float maxScale = 10f;
         [SerializeField] private string scaleValueFormat = "x{0:0.00}";
 
+        [Header("Control Mode Card")]
+        [SerializeField] private GameObject modeCard;
+        [SerializeField] private TMP_Text modeCardText;
+
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
@@ -56,6 +60,24 @@ namespace Playback
                    && stateMachine.Current == AppState.ShowingModel
                    && modelRoot != null
                    && modelRoot.childCount > 0;
+        }
+
+        public void UpdateControlModeCard(bool isScaleMode)
+        {
+            if (modeCard == null) return;
+            bool visible = HasActiveModel();
+            modeCard.SetActive(visible);
+            if (modeCardText != null)
+            {
+                // As requested: show "Size" when in Position mode, and "Position" when in Scale mode
+                modeCardText.text = isScaleMode ? "Position" : "Size";
+            }
+        }
+
+        public void SetControlModeCardVisible(bool visible)
+        {
+            if (modeCard == null) return;
+            modeCard.SetActive(visible && HasActiveModel());
         }
 
         private class PointCloudMeshInfo
@@ -351,6 +373,7 @@ namespace Playback
 
             UpdateScaleUi(currentScaleInput);
             SetScaleUiVisible(false);
+            SetControlModeCardVisible(false);
 
             if (downloadProgress)
             {
@@ -412,6 +435,8 @@ namespace Playback
                 stateMachine.SetAction("none");
                 // Keep scale UI hidden until user toggles size mode, but ensure visibility checks know a model exists
                 SetScaleUiVisible(scaleUiVisible);
+                // Update mode card to reflect current control mode (default is Position)
+                UpdateControlModeCard(false);
             }
             else
             {
@@ -810,6 +835,11 @@ namespace Playback
             if (scaleSlider != null)
             {
                 scaleSlider.onValueChanged.RemoveListener(OnScaleSliderChanged);
+            }
+            // Ensure card hidden when controller is gone
+            if (modeCard != null)
+            {
+                modeCard.SetActive(false);
             }
         }
 
