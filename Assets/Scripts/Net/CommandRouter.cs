@@ -31,7 +31,7 @@ namespace Net
                     {
                         PlayVideoCmd cmd = JsonUtility.FromJson<PlayVideoCmd>(json);
                         string url = settings.WebsiteUrl + cmd.url;
-                        videoController.PlayVideo(url, cmd.mapping, cmd.projection, cmd.stereo);
+                        videoController.PlayVideo(url, cmd.mapping, cmd.projection, cmd.stereo, cmd.name, cmd.fileId);
                         break;
                     }
                 case "video.changeMapping":
@@ -75,7 +75,7 @@ namespace Net
                     {
                         LoadModelCmd cmd = JsonUtility.FromJson<LoadModelCmd>(json);
                         string url = settings.WebsiteUrl + cmd.url;
-                        glbController.LoadModel(url);
+                        glbController.LoadModel(url, cmd.name, cmd.fileId);
                         break;
                     }
                 case "model.playAnimation":

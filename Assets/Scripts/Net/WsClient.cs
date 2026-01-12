@@ -101,11 +101,21 @@ namespace Net
                 string serial = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
                 string status = GetStatusString();
                 string action = GetActionString();
+                var (contentName, contentFileId) = GetContentInfo(status);
 
-                // Omit action when none or when in home to avoid sending "none" tokens
-                string pingJson = string.IsNullOrEmpty(action)
-                    ? $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\"}}"
-                    : $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\",\"action\":\"{action}\"}}";
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"type\":\"ping\"");
+                sb.Append($",\"serial\":\"{EscapeJson(serial)}\"");
+                sb.Append($",\"status\":\"{EscapeJson(status)}\"");
+                if (!string.IsNullOrEmpty(action))
+                    sb.Append($",\"action\":\"{EscapeJson(action)}\"");
+                if (!string.IsNullOrEmpty(contentName))
+                    sb.Append($",\"name\":\"{EscapeJson(contentName)}\"");
+                if (!string.IsNullOrEmpty(contentFileId))
+                    sb.Append($",\"fileId\":\"{EscapeJson(contentFileId)}\"");
+                sb.Append("}");
+
+                string pingJson = sb.ToString();
                 SafeSend(pingJson);
             }
         }
@@ -132,6 +142,19 @@ namespace Net
             if (isNone || GetStatusString() == "home") return null;
             Debug.Log($"[WsClient] GetActionString: Current action = {action}");
             return action;
+        }
+
+        private (string name, string fileId) GetContentInfo(string status)
+        {
+            if (state == null) return (null, null);
+            // Only include content info when not in home
+            if (status == "home") return (null, null);
+            return (state.CurrentContentName, state.CurrentContentFileId);
+        }
+
+        private static string EscapeJson(string value)
+        {
+            return value?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? string.Empty;
         }
 
         void OnApplicationQuit()

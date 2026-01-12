@@ -128,7 +128,7 @@ namespace Playback
             return $"{minutes}:{seconds:00}";
         }
 
-        public void PlayVideo(string url, string mapping, string projection, string stereo)
+        public void PlayVideo(string url, string mapping, string projection, string stereo, string name = null, string fileId = null)
         {   
             // Ensure GLB content is closed before playing video
             if (glbController != null)
@@ -155,6 +155,7 @@ namespace Playback
 
             stateMachine?.SetState(AppState.PlayingVideo);
             stateMachine?.SetAction("playing");
+            stateMachine?.SetContent(name, fileId);
 
             // Deactivate the MXR panel when video is playing
             if (mxrPanel != null)
@@ -241,6 +242,7 @@ namespace Playback
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(0f);
             stateMachine?.SetAction("none");
+            stateMachine?.ClearContent();
 
             // Reactivate the MXR panel when video is stopped
             if (mxrPanel != null)

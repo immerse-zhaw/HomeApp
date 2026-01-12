@@ -47,13 +47,14 @@ namespace Playback
             public Mesh WorkingMesh;  // assigned to filter; rebuilt per LOD
         }
 
-        public void LoadModel(string url)
+        public void LoadModel(string url, string name = null, string fileId = null)
         {
             Debug.Log($"[GlbController] Loading model from URL: {url}");
             // Ensure video is stopped before loading a model
             videoController?.StopVideo();
             stateMachine?.SetState(AppState.Loading);
             stateMachine?.SetAction("none");
+            stateMachine?.SetContent(name, fileId);
             StopAllCoroutines();
             ClearCurrentModel();
             // Keep this so we can report filename later

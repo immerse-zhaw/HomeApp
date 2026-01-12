@@ -16,6 +16,8 @@ namespace App
     {
         [SerializeField] private AppState current = AppState.Idle;
         [SerializeField] private string currentAction = "none";
+        [SerializeField] private string currentContentName = null;
+        [SerializeField] private string currentContentFileId = null;
 
         public void SetState(AppState next)
         {
@@ -34,7 +36,29 @@ namespace App
             currentAction = normalized;
         }
 
+        public void SetContent(string name, string fileId)
+        {
+            var newName = string.IsNullOrWhiteSpace(name) ? null : name;
+            var newFileId = string.IsNullOrWhiteSpace(fileId) ? null : fileId;
+            if (currentContentName == newName && currentContentFileId == newFileId) return;
+            string serial = MXRManager.System?.DeviceStatus?.serial ?? "unknown";
+            Debug.Log($"[StateMachine] Content → name: {newName}, fileId: {newFileId} | Serial: {serial}");
+            currentContentName = newName;
+            currentContentFileId = newFileId;
+        }
+
+        public void ClearContent()
+        {
+            if (currentContentName == null && currentContentFileId == null) return;
+            string serial = MXRManager.System?.DeviceStatus?.serial ?? "unknown";
+            Debug.Log($"[StateMachine] Content cleared | Serial: {serial}");
+            currentContentName = null;
+            currentContentFileId = null;
+        }
+
         public AppState Current => current;
         public string CurrentAction => currentAction;
+        public string CurrentContentName => currentContentName;
+        public string CurrentContentFileId => currentContentFileId;
     }
 }
