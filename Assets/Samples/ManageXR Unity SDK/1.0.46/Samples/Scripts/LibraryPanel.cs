@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Collections.Generic;
 
@@ -37,6 +38,28 @@ namespace MXR.SDK.Samples {
         List<VideoCell> videoCells = new List<VideoCell>();
         List<RuntimeAppCell> appCells = new List<RuntimeAppCell>();
         
+        // Packages we do not want to show in the Apps list (easy to edit in one place).
+        static readonly HashSet<string> HiddenPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "com.microsoft.windowsapp.WindowsAPP_AndroidApp",
+            "com.microsoft.rdc.androidx",
+            "com.immerse.HomeAppVR",
+            "horizon.platform.service",
+            "com.mightyimmersion.customlauncher.oculus.prod",
+            "horizonos.supplement.meta.ndk.libraryapk",
+            "horizon.platform.providers",
+            "com.android.managedprovisioning",
+            "com.mightyimmersion.mightyplatform.adminapp.prod",
+            "com.oculus.firsttimenux",
+            "com.oculus.q4bservice",
+            "com.oculus.store",
+            "com.oculus.vrshell"
+        };
+
+        static bool IsPackageHidden(string packageName) {
+            return !string.IsNullOrEmpty(packageName) && HiddenPackageNames.Contains(packageName);
+        }
+
         private float autoSyncInterval = 30f; // Auto-sync every 30 seconds
         private float timeSinceLastSync = 0f;
 
@@ -243,21 +266,32 @@ namespace MXR.SDK.Samples {
 
         void InstantiateAppCells() {
             if (appsContainer == null) return;
-            
-            MXRManager.System.RuntimeSettingsSummary.apps.Values.ToList()
-                .ForEach(x => {
-                    var instance = Instantiate(appCellTemplate, appsContainer.transform);
-                    instance.gameObject.SetActive(true);
-                    instance.gameObject.name = x.title;
-                    instance.runtimeApp = x;
-                    instance.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(x);
-                    // Log to help debug
-                    bool androidInstalled = MXRAndroidUtils.IsAppInstalled(x.packageName);
-                    FileLogger.Log($"[LibraryPanel] App: {x.title} | Package: {x.packageName} | AndroidInstalled: {androidInstalled} | HasStatus: {instance.status != null}");
-                    instance.Refresh();
-                    appCells.Add(instance);
-                    instance.gameObject.AddComponent<ForwardScrollToParent>();
-                });
+
+            var allApps = MXRManager.System.RuntimeSettingsSummary.apps.Values;
+            var visibleApps = allApps.Where(app => !IsPackageHidden(app.packageName)).ToList();
+
+            if (visibleApps.Count != allApps.Count)
+            {
+                var filtered = allApps.Select(app => app.packageName)
+                                      .Where(IsPackageHidden)
+                                      .Distinct(StringComparer.OrdinalIgnoreCase)
+                                      .ToList();
+                FileLogger.Log($"[LibraryPanel] Filtered {filtered.Count} app(s) by package: {string.Join(", ", filtered)}");
+            }
+
+            visibleApps.ForEach(x => {
+                var instance = Instantiate(appCellTemplate, appsContainer.transform);
+                instance.gameObject.SetActive(true);
+                instance.gameObject.name = x.title;
+                instance.runtimeApp = x;
+                instance.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(x);
+                // Log to help debug
+                bool androidInstalled = MXRAndroidUtils.IsAppInstalled(x.packageName);
+                FileLogger.Log($"[LibraryPanel] App: {x.title} | Package: {x.packageName} | AndroidInstalled: {androidInstalled} | HasStatus: {instance.status != null}");
+                instance.Refresh();
+                appCells.Add(instance);
+                instance.gameObject.AddComponent<ForwardScrollToParent>();
+            });
         }
     }
 }

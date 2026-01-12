@@ -96,12 +96,6 @@ namespace Net
                         glbController.SetPointsSize(cmd.size);
                         break;
                     }
-                case "model.setScale":
-                    {
-                        ModelSetScaleCmd cmd = JsonUtility.FromJson<ModelSetScaleCmd>(json);
-                        glbController.SetScale(cmd.scale);
-                        break;
-                    }
                 default:
                     {
                         break;

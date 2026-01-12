@@ -3,6 +3,7 @@ using GLTFast;
 using System.Threading.Tasks;
 using System;
 using UnityEngine.UI;
+using TMPro;
 using UnityEngine.Networking;
 using System.Collections;
 using System.Collections.Generic;
@@ -20,6 +21,13 @@ namespace Playback
         [Header("Download Progress")]
         [SerializeField] private Slider downloadProgress;
 
+        [Header("Scale Controls")]
+        [SerializeField] private Slider scaleSlider;
+        [SerializeField] private TMP_Text scaleValueText;
+        [SerializeField] private float minScale = 0.1f;
+        [SerializeField] private float maxScale = 10f;
+        [SerializeField] private string scaleValueFormat = "x{0:0.00}";
+
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
@@ -30,14 +38,25 @@ namespace Playback
         private Animation animationPlayer; // Found on instantiated model, if any
         private float autoScale = 1f;
         private float userScale = 1f;
+        private float currentScaleInput = 1f; // External/user-friendly scale (0.1x - 10x)
+        private bool suppressScaleUiEvents = false;
         private readonly List<PointCloudMeshInfo> pointCloudMeshes = new List<PointCloudMeshInfo>();
         // Keep the URL of the model being loaded so we can report filename when ready
         private string currentModelUrl;
         private StateMachine stateMachine;
         private Playback.VideoController videoController;
+        private bool scaleUiVisible = false;
 
         // Expose model root so other scripts (e.g., GlbMover) can manipulate the loaded model.
         public Transform ModelRoot => modelRoot;
+
+        public bool HasActiveModel()
+        {
+            return stateMachine != null
+                   && stateMachine.Current == AppState.ShowingModel
+                   && modelRoot != null
+                   && modelRoot.childCount > 0;
+        }
 
         private class PointCloudMeshInfo
         {
@@ -45,6 +64,12 @@ namespace Playback
             public MeshRenderer Renderer;
             public Mesh OriginalMesh; // copied from loaded mesh; never mutated
             public Mesh WorkingMesh;  // assigned to filter; rebuilt per LOD
+        }
+
+        private void Awake()
+        {
+            InitializeScaleUi();
+            SetScaleUiVisible(false);
         }
 
         public void LoadModel(string url, string name = null, string fileId = null)
@@ -152,17 +177,22 @@ namespace Playback
                 Debug.LogWarning("[GlbController] modelRoot is not assigned.");
                 return;
             }
-            // Remap external scale: 1x means fit in 1x1x1, 10x means 10x bigger than that
+
+            float clamped = Mathf.Clamp(s, minScale, maxScale);
+            currentScaleInput = clamped;
+            // Remap external scale: linear mapping so slider travel is symmetric and constant-speed
             float mappedScale = 1f;
-            if (s <= 1.0f)
+            if (clamped <= 1.0f)
             {
-                // 0.1x to 1x: map linearly (0.1 to 1)
-                mappedScale = Mathf.Lerp(0.1f, 1f, (s - 0.1f) / 0.9f);
+                float t = (clamped - minScale) / (1f - minScale);
+                t = Mathf.Clamp01(t);
+                mappedScale = Mathf.Lerp(minScale, 1f, t);
             }
             else
             {
-                // 1x to 10x: map linearly (1 to 10)
-                mappedScale = Mathf.Lerp(1f, 10f, (s - 1f) / 9f);
+                float t = (clamped - 1f) / (maxScale - 1f);
+                t = Mathf.Clamp01(t);
+                mappedScale = Mathf.Lerp(1f, maxScale, t);
             }
             userScale = Mathf.Max(0f, mappedScale);
             ApplyCompositeScale();
@@ -178,7 +208,118 @@ namespace Playback
                 pointsMaterial.SetFloat(_pointSizePropId, defaultPointSize);
             }
 
-            Debug.Log($"[GlbController] Set user scale to {s} (mapped: {mappedScale}). Combined scale: {autoScale * userScale}");
+            UpdateScaleUi(clamped);
+            SetScaleUiVisible(scaleUiVisible); // respect current toggle but re-check model presence
+
+            Debug.Log($"[GlbController] Set user scale to {clamped} (mapped: {mappedScale}). Combined scale: {autoScale * userScale}");
+        }
+
+        public void AdjustScale(float delta)
+        {
+            // Apply changes in normalized slider space so travel speed is symmetric around 1x
+            float norm = MapScaleToNormalized(currentScaleInput);
+            norm = Mathf.Clamp01(norm + delta);
+            float target = MapNormalizedToScale(norm);
+            SetScale(target);
+        }
+
+        public void SetScaleUiVisible(bool shouldShow)
+        {
+            scaleUiVisible = shouldShow;
+            bool canShow = shouldShow && HasActiveModel();
+
+            if (scaleSlider != null)
+            {
+                scaleSlider.gameObject.SetActive(canShow);
+            }
+
+            if (scaleValueText != null)
+            {
+                scaleValueText.gameObject.SetActive(canShow);
+            }
+        }
+
+        private void InitializeScaleUi()
+        {
+            if (scaleSlider != null)
+            {
+                suppressScaleUiEvents = true;
+                // Use a normalized 0..1 slider and map non-linearly to the 0.1..10 scale so
+                // lower-than-1 changes are slightly slower and above-1 changes are slightly faster.
+                scaleSlider.minValue = 0f;
+                scaleSlider.maxValue = 1f;
+                float norm = MapScaleToNormalized(currentScaleInput);
+                scaleSlider.SetValueWithoutNotify(norm);
+                scaleSlider.onValueChanged.AddListener(OnScaleSliderChanged);
+                suppressScaleUiEvents = false;
+            }
+
+            UpdateScaleUiLabel(currentScaleInput);
+            SetScaleUiVisible(false);
+        }
+
+        private void UpdateScaleUi(float value)
+        {
+            if (scaleSlider != null)
+            {
+                suppressScaleUiEvents = true;
+                float norm = MapScaleToNormalized(value);
+                scaleSlider.SetValueWithoutNotify(norm);
+                suppressScaleUiEvents = false;
+            }
+
+            UpdateScaleUiLabel(value);
+        }
+
+        private void UpdateScaleUiLabel(float value)
+        {
+            if (scaleValueText != null)
+            {
+                scaleValueText.text = string.Format(scaleValueFormat, value);
+            }
+        }
+
+        private void OnScaleSliderChanged(float value)
+        {
+            if (suppressScaleUiEvents) return;
+            // Slider is normalized (0..1); map to actual scale with piecewise easing so
+            // below 1x is slower and above 1x is faster.
+            float mapped = MapNormalizedToScale(value);
+            SetScale(mapped);
+        }
+
+        // Map normalized slider (0..1) to actual scale in [minScale,maxScale]
+        private float MapNormalizedToScale(float n)
+        {
+            n = Mathf.Clamp01(n);
+            if (n <= 0.5f)
+            {
+                float t = n / 0.5f; // 0..1
+                return Mathf.Lerp(minScale, 1f, t);
+            }
+            else
+            {
+                float t = (n - 0.5f) / 0.5f; // 0..1
+                return Mathf.Lerp(1f, maxScale, t);
+            }
+        }
+
+        // Map actual scale back to normalized slider position
+        private float MapScaleToNormalized(float s)
+        {
+            s = Mathf.Clamp(s, minScale, maxScale);
+            if (s <= 1f)
+            {
+                float t = (s - minScale) / (1f - minScale);
+                t = Mathf.Clamp01(t);
+                return t * 0.5f;
+            }
+            else
+            {
+                float t = (s - 1f) / (maxScale - 1f);
+                t = Mathf.Clamp01(t);
+                return 0.5f + 0.5f * t;
+            }
         }
 
         private void ClearCurrentModel()
@@ -206,6 +347,10 @@ namespace Playback
 
             autoScale = 1f;
             userScale = 1f;
+            currentScaleInput = 1f;
+
+            UpdateScaleUi(currentScaleInput);
+            SetScaleUiVisible(false);
 
             if (downloadProgress)
             {
@@ -265,6 +410,8 @@ namespace Playback
                 Debug.Log($"[GlbController] Setting state to ShowingModel. Current state: {stateMachine.Current}");
                 stateMachine.SetState(AppState.ShowingModel);
                 stateMachine.SetAction("none");
+                // Keep scale UI hidden until user toggles size mode, but ensure visibility checks know a model exists
+                SetScaleUiVisible(scaleUiVisible);
             }
             else
             {
@@ -516,7 +663,7 @@ namespace Playback
 
         private void SetupGlbPipeline(Transform root)
         {
-            // Add Rigidbody
+            // Add Rigidbody (ensure kinematic so released objects don't fly away)
             var rigidbody = root.GetComponent<Rigidbody>();
             if (rigidbody == null)
             {
@@ -524,6 +671,7 @@ namespace Playback
                 rigidbody.useGravity = false;
                 rigidbody.collisionDetectionMode = CollisionDetectionMode.Continuous;
             }
+            rigidbody.isKinematic = true;
             rigidbody.linearVelocity = Vector3.zero;
             rigidbody.angularVelocity = Vector3.zero;
 
@@ -556,7 +704,8 @@ namespace Playback
             // Add XRGrabInteractable
             var grabbable = root.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>()
                             ?? root.gameObject.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
-            grabbable.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.VelocityTracking;
+            // Use Kinematic movement so objects remain in place when released
+            grabbable.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.Kinematic;
             grabbable.throwOnDetach = true;
 
             // Add Editable tag
@@ -654,6 +803,14 @@ namespace Playback
             }
 
             Debug.Log("[GlbController] Model download complete. Model is ready.");
+        }
+
+        private void OnDestroy()
+        {
+            if (scaleSlider != null)
+            {
+                scaleSlider.onValueChanged.RemoveListener(OnScaleSliderChanged);
+            }
         }
 
         public void Inject(StateMachine sm, Playback.VideoController vc)

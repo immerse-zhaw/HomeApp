@@ -15,6 +15,17 @@ namespace Playback
         [SerializeField] private float minHeight = -5f;
         [SerializeField] private float maxHeight = 5f;
         [SerializeField] private bool enableEditorControls = true; // allow keyboard fallback for testing in Editor
+        [SerializeField] private float rotationSpeed = 90f;   // degrees per second around Y when rotating
+        [SerializeField] private float scaleAdjustSpeed = 1.5f; // units per second when nudging scale (0.1x - 10x)
+
+        private enum ControlMode
+        {
+            Position,
+            Scale
+        }
+
+        private ControlMode controlMode = ControlMode.Position;
+        private bool prevRightPrimaryPressed = false;
 
         private Playback.GlbController glbController;
 
@@ -25,11 +36,21 @@ namespace Playback
             {
                 Debug.LogWarning("[GlbMover] No GlbController found in scene.");
             }
+            else
+            {
+                glbController.SetScaleUiVisible(false);
+            }
         }
 
         void Update()
         {
             if (glbController == null) return;
+
+            if (!glbController.HasActiveModel())
+            {
+                glbController.SetScaleUiVisible(false);
+                return;
+            }
             var root = glbController.ModelRoot;
             if (root == null) return;
 
@@ -75,12 +96,27 @@ namespace Playback
             if (Mathf.Abs(leftAxis.x) < deadzone) leftAxis.x = 0f;
             if (Mathf.Abs(leftAxis.y) < deadzone) leftAxis.y = 0f;
             if (Mathf.Abs(rightAxis.y) < deadzone) rightAxis.y = 0f;
+            if (Mathf.Abs(rightAxis.x) < deadzone) rightAxis.x = 0f;
+
+            // Detect right-primary button to toggle control mode
+            if (rightValid && right.TryGetFeatureValue(CommonUsages.primaryButton, out bool rightPrimary))
+            {
+                if (rightPrimary && !prevRightPrimaryPressed)
+                {
+                    ToggleControlMode();
+                }
+
+                prevRightPrimaryPressed = rightPrimary;
+            }
 
             // No input? nothing to do
-            if (leftAxis == Vector2.zero && rightAxis.y == 0f) return;
+            bool hasPlanarInput = leftAxis != Vector2.zero;
+            bool hasHeightInput = Mathf.Abs(rightAxis.y) > Mathf.Epsilon;
+            bool hasRightXInput = Mathf.Abs(rightAxis.x) > Mathf.Epsilon;
+            if (!hasPlanarInput && !hasHeightInput && !hasRightXInput) return;
 
             // Debug input for troubleshooting (include device validity flags)
-            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightY: {rightAxis.y} (valid:{rightValid})");
+            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Mode: {controlMode}");
 
             // Movement direction relative to camera forward/right projected to XZ plane
             Vector3 forward = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized : Vector3.forward;
@@ -97,6 +133,35 @@ namespace Playback
             Vector3 newPos = root.position + planarDelta;
             newPos.y = newY;
             root.position = newPos;
+
+            // Apply rotation or scale based on current mode
+            if (Mathf.Abs(rightAxis.x) > 0f)
+            {
+                if (controlMode == ControlMode.Position)
+                {
+                    float yawDelta = rightAxis.x * rotationSpeed * Time.deltaTime;
+                    root.Rotate(Vector3.up, yawDelta, Space.World);
+                }
+                else // Scale mode
+                {
+                    if (glbController != null)
+                    {
+                        float scaleDelta = rightAxis.x * scaleAdjustSpeed * Time.deltaTime;
+                        glbController.AdjustScale(scaleDelta);
+                    }
+                }
+            }
+        }
+
+        private void ToggleControlMode()
+        {
+            controlMode = controlMode == ControlMode.Position ? ControlMode.Scale : ControlMode.Position;
+            Debug.Log($"[GlbMover] Switched control mode to {controlMode}.");
+
+            if (glbController != null)
+            {
+                glbController.SetScaleUiVisible(controlMode == ControlMode.Scale);
+            }
         }
 
         // Try to get keyboard fallback input in editor. Works with both the old Input API and the new Input System (via reflection).

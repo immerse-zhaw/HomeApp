@@ -119,10 +119,4 @@ namespace Net.Messages
         public float size;
     }
 
-    [Serializable]
-    public class ModelSetScaleCmd
-    {
-        public string type = "model.setScale";
-        public float scale;
-    }
 }
