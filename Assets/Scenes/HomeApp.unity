@@ -1855,7 +1855,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6598815579406187037, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -6848,6 +6848,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: App Root
       objectReference: {fileID: 0}
+    - target: {fileID: 4962522623178912832, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+      propertyPath: m_AspectRatio
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: floor
       value: 
@@ -9489,8 +9493,8 @@ MonoBehaviour:
   cameraTransform: {fileID: 0}
   distanceFromCamera: 4
   followSpeed: 2
-  rotationSpeed: 3
   heightOffset: 0
+  grabInteractable: {fileID: 0}
   activationAngle: 30
 --- !u!1 &2012364943
 GameObject:
@@ -12329,8 +12333,8 @@ MonoBehaviour:
   cameraTransform: {fileID: 65905029}
   distanceFromCamera: 6
   followSpeed: 2
-  rotationSpeed: 3
   heightOffset: 0
+  grabInteractable: {fileID: 0}
   activationAngle: 30
 --- !u!224 &6515980929741440963
 RectTransform:

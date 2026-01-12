@@ -56,9 +56,19 @@ namespace Net
                         videoController.ResumeVideo();
                         break;
                     }
-                case "video.stop":
+                case "home":
                     {
-                        videoController.StopVideo();
+                        // Home: ensure all content is closed and return to idle with MXR panel shown.
+                        if (videoController != null)
+                        {
+                            videoController.StopVideo();
+                        }
+                        if (glbController != null)
+                        {
+                            glbController.CloseModel();
+                        }
+                        state?.SetState(AppState.Idle);
+                        state?.SetAction("none");
                         break;
                     }
                 case "model.load":
@@ -68,15 +78,16 @@ namespace Net
                         glbController.LoadModel(url);
                         break;
                     }
-                case "model.close":
-                    {
-                        glbController.CloseModel();
-                        break;
-                    }
                 case "model.playAnimation":
                     {
                         ModelPlayAnimationCmd cmd = JsonUtility.FromJson<ModelPlayAnimationCmd>(json);
                         glbController.PlayAnimation(cmd.name);
+                        break;
+                    }
+                case "model.stopAnimation":
+                    {
+                        _ = JsonUtility.FromJson<ModelStopAnimationCmd>(json);
+                        glbController.StopAnimation();
                         break;
                     }
                 case "model.setPointSize":

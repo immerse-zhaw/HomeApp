@@ -53,16 +53,18 @@ namespace Playback
             // Ensure video is stopped before loading a model
             videoController?.StopVideo();
             stateMachine?.SetState(AppState.Loading);
+            stateMachine?.SetAction("none");
             StopAllCoroutines();
             ClearCurrentModel();
             // Keep this so we can report filename later
             currentModelUrl = url;
-            
+
             // Deactivate the MXR panel when spawning a GLB object
             if (mxrPanel != null)
             {
                 mxrPanel.SetActive(false);
             }
+
             if (downloadProgress)
             {
                 StartCoroutine(DownloadThenInstantiate(url));
@@ -87,6 +89,7 @@ namespace Playback
             {
                 stateMachine.SetState(AppState.Idle);
             }
+            stateMachine?.SetAction("none");
         }
 
         public void PlayAnimation(string animation)
@@ -96,18 +99,30 @@ namespace Playback
                 Debug.LogWarning("[GlbController] No Animations found.");
                 return;
             }
-            
-            if (animation == "")
+            animationPlayer.clip = animationPlayer.GetClip(animation);
+            animationPlayer.Play();
+            stateMachine?.SetAction(animation);
+            Debug.Log($"[GlbController] Playing animation #{animation}.");
+        }
+
+        public void StopAnimation()
+        {
+            if (animationPlayer == null)
+            {
+                Debug.LogWarning("[GlbController] No Animations to stop.");
+                return;
+            }
+
+            // Reset to first frame so the model returns to its original pose
+            if (animationPlayer.clip != null)
             {
                 animationPlayer[animationPlayer.clip.name].time = 0f;
                 animationPlayer.Sample();
-                animationPlayer.Stop();
             }
 
-            animationPlayer.clip = animationPlayer.GetClip(animation);
-
-            animationPlayer.Play();
-            Debug.Log($"[GlbController] Playing animation #{animation}.");
+            animationPlayer.Stop();
+            stateMachine?.SetAction("none");
+            Debug.Log("[GlbController] Stopped animation.");
         }
 
         public void SetPointsSize(float size)
@@ -230,14 +245,7 @@ namespace Playback
             bool hasPointTopology = HasPointTopologyInChildren(modelRoot);
             
             // Send simple status over websocket indicating what is playing (point cloud vs 3D object)
-            var ws = FindObjectOfType<Net.WsClient>();
-            if (ws != null && !string.IsNullOrEmpty(currentModelUrl))
-            {
-                var fileName = Path.GetFileName(currentModelUrl);
-                var status = hasPointTopology ? $"Playing point cloud: {fileName}" : $"Playing 3D object: {fileName}";
-                Debug.Log($"[GlbController] Sending status: {status}");
-                ws.SendStatus(status);
-            }
+
 
             if (hasPointTopology)
             {
@@ -255,6 +263,7 @@ namespace Playback
             {
                 Debug.Log($"[GlbController] Setting state to ShowingModel. Current state: {stateMachine.Current}");
                 stateMachine.SetState(AppState.ShowingModel);
+                stateMachine.SetAction("none");
             }
             else
             {
@@ -428,7 +437,6 @@ namespace Playback
 
                 int targetCount = perMeshTargets[i];
                 targetCount = Mathf.Clamp(targetCount, 256, verts.Length);
-
                 // Evenly sample to get close to the requested targetCount. This produces a smooth,
                 // monotonic progression up to the requested budget (or original vertex count).
                 int desired = Mathf.Min(targetCount, verts.Length);

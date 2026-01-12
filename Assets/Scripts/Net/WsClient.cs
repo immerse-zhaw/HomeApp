@@ -70,6 +70,7 @@ namespace Net
             ws.OnMessage += (data) =>
             {
                 string text = Encoding.UTF8.GetString(data);
+                Debug.Log($"[WsClient] << {text}");
                 OnMessage?.Invoke(text);
             };
 
@@ -99,7 +100,12 @@ namespace Net
                 var deviceStatus = MXRManager.System?.DeviceStatus;
                 string serial = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
                 string status = GetStatusString();
-                string pingJson = $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\"}}";
+                string action = GetActionString();
+
+                // Omit action when none or when in home to avoid sending "none" tokens
+                string pingJson = string.IsNullOrEmpty(action)
+                    ? $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\"}}"
+                    : $"{{\"type\":\"ping\",\"serial\":\"{serial}\",\"status\":\"{status}\",\"action\":\"{action}\"}}";
                 SafeSend(pingJson);
             }
         }
@@ -115,6 +121,17 @@ namespace Net
             };
             Debug.Log($"[WsClient] GetStatusString: Current state = {current}, Returning: {statusString}");
             return statusString;
+        }
+
+        private string GetActionString()
+        {
+            if (state == null) return null;
+            string action = state.CurrentAction;
+            // Treat empty/none or when status is home as no action
+            bool isNone = string.IsNullOrWhiteSpace(action) || action == "none";
+            if (isNone || GetStatusString() == "home") return null;
+            Debug.Log($"[WsClient] GetActionString: Current action = {action}");
+            return action;
         }
 
         void OnApplicationQuit()
@@ -177,16 +194,5 @@ namespace Net
             Debug.Log($"[WsClient] >> {text}");
         }
 
-        // Send a simple status message over the websocket. Example: {"type":"status","status":"Playing video: file.mp4"}
-        public void SendStatus(string status)
-        {
-            if (shuttingDown || !IsOpen) return;
-            // Escape any quotes in the status so the JSON stays valid
-            var safeStatus = status != null ? status.Replace("\"", "\\\"") : "";
-            var json = "{\"type\":\"status\",\"status\":\"" + safeStatus + "\"}";
-            // Log a readable status message and send JSON
-            Debug.Log($"[WsClient] Sending status | {status}");
-            SafeSend(json);
-        }
     }
 }

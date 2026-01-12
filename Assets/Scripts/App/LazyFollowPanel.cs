@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 namespace App
 {
@@ -12,17 +14,18 @@ namespace App
         [SerializeField] private Transform cameraTransform;
         [SerializeField] private float distanceFromCamera = 2f;
         [SerializeField] private float followSpeed = 2f;
-        [SerializeField] private float rotationSpeed = 3f;
         [SerializeField] private float heightOffset = 0f;
+        [SerializeField] private XRGrabInteractable grabInteractable;
         // Offset in the camera's local space so the panel moves with the camera
         private Vector3 relativeOffset = Vector3.zero;
+        private bool offsetInitialized;
+        private bool warnedMissingGrab;
         
         [Header("Activation Settings")]
         [Tooltip("Minimum angle difference before panel starts following")]
         [SerializeField] private float activationAngle = 30f;
 
         private Vector3 targetPosition;
-        private Quaternion targetRotation;
 
         void Start()
         {
@@ -43,7 +46,22 @@ namespace App
             // Initialize panel in front of user
             if (cameraTransform != null)
             {
-                PositionPanelInFrontOfUser();
+                // Capture the starting offset relative to the camera so we preserve it until the user moves it.
+                relativeOffset = cameraTransform.InverseTransformPoint(transform.position);
+                offsetInitialized = true;
+            }
+        }
+
+        void OnEnable()
+        {
+            EnsureGrabCallbacks();
+        }
+
+        void OnDisable()
+        {
+            if (grabInteractable != null)
+            {
+                grabInteractable.selectExited.RemoveListener(OnSelectExited);
             }
         }
 
@@ -56,38 +74,28 @@ namespace App
 
             // Smoothly move towards target
             transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * followSpeed);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
         }
 
         private void UpdateTargetTransform()
         {
-            // If no custom offset yet, use default in-front offset in camera-local space
-            if (relativeOffset == Vector3.zero)
+            // Lazily initialize offset from current placement if it wasn't set yet
+            if (!offsetInitialized)
             {
-                relativeOffset = new Vector3(0f, heightOffset, distanceFromCamera);
+                relativeOffset = cameraTransform.InverseTransformPoint(transform.position);
+                offsetInitialized = true;
             }
 
             // Convert camera-local offset back to world space
             targetPosition = cameraTransform.TransformPoint(relativeOffset);
-
-            // Always face the camera horizontally
-            Vector3 toCamera = cameraTransform.position - targetPosition;
-            toCamera.y = 0f;
-            if (toCamera.sqrMagnitude < 0.0001f)
-            {
-                toCamera = cameraTransform.forward;
-                toCamera.y = 0f;
-            }
-            targetRotation = Quaternion.LookRotation(-toCamera.normalized);
         }
 
         private void PositionPanelInFrontOfUser()
         {
             // Reset offset to default in front of user in camera-local space
             relativeOffset = new Vector3(0f, heightOffset, distanceFromCamera);
+            offsetInitialized = true;
             UpdateTargetTransform();
             transform.position = targetPosition;
-            transform.rotation = targetRotation;
         }
 
         /// <summary>
@@ -109,7 +117,33 @@ namespace App
             {
                 // Store the offset in camera-local space so it moves with the camera
                 relativeOffset = cameraTransform.InverseTransformPoint(transform.position);
+                offsetInitialized = true;
             }
+        }
+
+        private void EnsureGrabCallbacks()
+        {
+            if (grabInteractable == null)
+            {
+                grabInteractable = GetComponent<XRGrabInteractable>();
+            }
+
+            if (grabInteractable != null)
+            {
+                // Avoid duplicate subscriptions when toggling enabled state
+                grabInteractable.selectExited.RemoveListener(OnSelectExited);
+                grabInteractable.selectExited.AddListener(OnSelectExited);
+            }
+            else if (!warnedMissingGrab)
+            {
+                Debug.LogWarning("[LazyFollowPanel] No XRGrabInteractable found. Offset after grab will not be preserved.");
+                warnedMissingGrab = true;
+            }
+        }
+
+        private void OnSelectExited(SelectExitEventArgs args)
+        {
+            PreserveOffsetAfterGrab();
         }
     }
 }

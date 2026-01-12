@@ -59,6 +59,11 @@ namespace Playback
             SetFloorAlpha(0f);
             SetupUI();
             SetControlPanelVisibility(false);
+            // Ensure pause icon is shown at start (video is playing by default)
+            if (playPauseIcon != null && pauseSprite != null)
+            {
+                playPauseIcon.sprite = pauseSprite;
+            }
         }
 
         private void SetupUI()
@@ -149,21 +154,12 @@ namespace Playback
             SetControlPanelVisibility(true);
 
             stateMachine?.SetState(AppState.PlayingVideo);
+            stateMachine?.SetAction("playing");
 
             // Deactivate the MXR panel when video is playing
             if (mxrPanel != null)
             {
                 mxrPanel.SetActive(false);
-            }
-
-            // Send status to websocket: "Playing video: <filename>"
-            var ws = FindObjectOfType<Net.WsClient>();
-            if (ws != null)
-            {
-                var fileName = Path.GetFileName(url);
-                var status = $"Playing video: {fileName}";
-                Debug.Log($"[VideoController] Sending status: {status}");
-                ws.SendStatus(status);
             }
 
             // Disable AR passthrough and set camera to render skybox
@@ -222,6 +218,7 @@ namespace Playback
             videoPlayer.Pause();
             isPlaying = false;
             UpdatePlayPauseIcon();
+            stateMachine?.SetAction("paused");
             Debug.Log("[VideoController] Pausing video.");
         }
 
@@ -231,6 +228,7 @@ namespace Playback
             isPlaying = true;
             UpdatePlayPauseIcon();
             stateMachine?.SetState(AppState.PlayingVideo);
+            stateMachine?.SetAction("playing");
             Debug.Log("[VideoController] Resuming video.");
         }
 
@@ -242,6 +240,7 @@ namespace Playback
             SetControlPanelVisibility(false);
             RenderSettings.skybox = skyboxDefault; 
             SetFloorAlpha(0f);
+            stateMachine?.SetAction("none");
 
             // Reactivate the MXR panel when video is stopped
             if (mxrPanel != null)
