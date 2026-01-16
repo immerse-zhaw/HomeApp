@@ -18,6 +18,10 @@ namespace Playback
         [SerializeField] private float rotationSpeed = 90f;   // degrees per second around Y when rotating
         [SerializeField] private float scaleAdjustSpeed = 1.5f; // units per second when nudging scale (0.1x - 10x)
 
+        [Header("Reset")]
+        [Tooltip("Press the primary button on the left controller to reset the object to its initial transform.")]
+        [SerializeField] private bool enableReset = true;
+
         private enum ControlMode
         {
             Position,
@@ -26,6 +30,12 @@ namespace Playback
 
         private ControlMode controlMode = ControlMode.Position;
         private bool prevRightPrimaryPressed = false;
+        private bool prevLeftPrimaryPressed = false;
+
+        private bool initialCaptured = false;
+        private Vector3 initialPosition = Vector3.zero;
+        private Quaternion initialRotation = Quaternion.identity;
+        private Vector3 initialLocalScale = Vector3.one;
 
         private Playback.GlbController glbController;
 
@@ -49,10 +59,20 @@ namespace Playback
             if (!glbController.HasActiveModel())
             {
                 glbController.SetScaleUiVisible(false);
+                initialCaptured = false;
                 return;
             }
             var root = glbController.ModelRoot;
             if (root == null) return;
+
+            // Capture the initial transform once per active model
+            if (!initialCaptured)
+            {
+                initialCaptured = true;
+                initialPosition = root.position;
+                initialRotation = root.rotation;
+                initialLocalScale = root.localScale;
+            }
 
             // Read left thumbstick (left hand) for planar movement
             var left = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
@@ -109,6 +129,20 @@ namespace Playback
                 prevRightPrimaryPressed = rightPrimary;
             }
 
+            // Detect left-primary button for reset (edge-triggered)
+            bool leftPrimary = false;
+            if (leftValid && left.TryGetFeatureValue(CommonUsages.primaryButton, out bool lp))
+            {
+                leftPrimary = lp;
+            }
+
+            if (leftPrimary && !prevLeftPrimaryPressed && enableReset)
+            {
+                ResetToInitial(root);
+            }
+
+            prevLeftPrimaryPressed = leftPrimary;
+
             // No input? nothing to do
             bool hasPlanarInput = leftAxis != Vector2.zero;
             bool hasHeightInput = Mathf.Abs(rightAxis.y) > Mathf.Epsilon;
@@ -162,6 +196,14 @@ namespace Playback
             {
                 glbController.SetScaleUiVisible(controlMode == ControlMode.Scale);
             }
+        }
+
+        private void ResetToInitial(Transform root)
+        {
+            if (root == null) return;
+            root.position = initialPosition;
+            root.rotation = initialRotation;
+            root.localScale = initialLocalScale;
         }
 
         // Try to get keyboard fallback input in editor. Works with both the old Input API and the new Input System (via reflection).
