@@ -32,6 +32,10 @@ namespace Playback
         [SerializeField] private GameObject modeCard;
         [SerializeField] private TMP_Text modeCardText;
 
+        [Header("Instruction Cards")]
+        [Tooltip("Root GameObjects for UI instruction cards. These will be activated when a 3D model is being shown and deactivated otherwise.")]
+        [SerializeField] private System.Collections.Generic.List<GameObject> instructionCards = new System.Collections.Generic.List<GameObject>();
+
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
@@ -62,6 +66,20 @@ namespace Playback
                    && modelRoot.childCount > 0;
         }
 
+        /// <summary>
+        /// Returns a concise diagnostic string describing why a model is (or isn't) considered active.
+        /// Useful for runtime debugging from other components.
+        /// </summary>
+        public string GetModelStateDiagnostic()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"HasActiveModel={HasActiveModel()}");
+            sb.Append($"; stateMachine={(stateMachine == null ? "NULL" : stateMachine.Current.ToString())}");
+            sb.Append($"; modelRoot={(modelRoot == null ? "NULL" : "OK")}");
+            sb.Append($"; childCount={(modelRoot == null ? 0 : modelRoot.childCount)}");
+            return sb.ToString();
+        }
+
         public void UpdateControlModeCard(bool isScaleMode)
         {
             if (modeCard == null) return;
@@ -69,8 +87,8 @@ namespace Playback
             modeCard.SetActive(visible);
             if (modeCardText != null)
             {
-                // As requested: show "Size" when in Position mode, and "Position" when in Scale mode
-                modeCardText.text = isScaleMode ? "Position" : "Size";
+                // Show the current mode name: "Size" when in Scale mode, "Position" otherwise
+                modeCardText.text = isScaleMode ? "Size" : "Position";
             }
         }
 
@@ -78,6 +96,16 @@ namespace Playback
         {
             if (modeCard == null) return;
             modeCard.SetActive(visible && HasActiveModel());
+        }
+
+        public void SetInstructionCardsActive(bool active)
+        {
+            if (instructionCards == null) return;
+            bool canShow = active && HasActiveModel();
+            foreach (var g in instructionCards)
+            {
+                if (g != null) g.SetActive(canShow);
+            }
         }
 
         private class PointCloudMeshInfo
@@ -92,6 +120,7 @@ namespace Playback
         {
             InitializeScaleUi();
             SetScaleUiVisible(false);
+            SetInstructionCardsActive(false);
         }
 
         public void LoadModel(string url, string name = null, string fileId = null)
@@ -374,6 +403,8 @@ namespace Playback
             UpdateScaleUi(currentScaleInput);
             SetScaleUiVisible(false);
             SetControlModeCardVisible(false);
+            // Ensure instruction cards are hidden when model is cleared
+            SetInstructionCardsActive(false);
 
             if (downloadProgress)
             {
@@ -437,6 +468,8 @@ namespace Playback
                 SetScaleUiVisible(scaleUiVisible);
                 // Update mode card to reflect current control mode (default is Position)
                 UpdateControlModeCard(false);
+                // Show instruction cards when a 3D model is shown
+                SetInstructionCardsActive(true);
             }
             else
             {
@@ -841,6 +874,9 @@ namespace Playback
             {
                 modeCard.SetActive(false);
             }
+
+            // Hide instruction cards
+            SetInstructionCardsActive(false);
         }
 
         public void Inject(StateMachine sm, Playback.VideoController vc)
