@@ -60,10 +60,14 @@ namespace Playback
 
         public bool HasActiveModel()
         {
-            return stateMachine != null
-                   && stateMachine.Current == AppState.ShowingModel
-                   && modelRoot != null
-                   && modelRoot.childCount > 0;
+            if (modelRoot == null || modelRoot.childCount == 0)
+                return false;
+
+            // If state machine isn't present (e.g., in isolated testing), allow interaction
+            if (stateMachine == null)
+                return true;
+
+            return stateMachine.Current == AppState.ShowingModel;
         }
 
         /// <summary>
@@ -690,16 +694,16 @@ namespace Playback
             else if (us <= 5f)
             {
                 float t = (us - 1f) / 4f;
-                target = Mathf.RoundToInt(Mathf.Lerp(30000, 500000, t));
+                target = Mathf.RoundToInt(Mathf.Lerp(30000, 1000000, t));
             }
             else if (us <= 10f)
             {
                 float t = (us - 5f) / 5f;
-                target = Mathf.RoundToInt(Mathf.Lerp(500000, 1500000, t));
+                target = Mathf.RoundToInt(Mathf.Lerp(500000, 2000000, t));
             }
             else
             {
-                target = 1500000;
+                target = 2000000;
             }
 
             // Never exceed original count
