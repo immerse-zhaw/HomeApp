@@ -119,4 +119,16 @@ namespace Net.Messages
         public float size;
     }
 
+    [Serializable]
+    public class PassthroughEnableCmd
+    {
+        public string type = "passthrough.enable";
+    }
+
+    [Serializable]
+    public class PassthroughDisableCmd
+    {
+        public string type = "passthrough.disable";
+    }
+
 }

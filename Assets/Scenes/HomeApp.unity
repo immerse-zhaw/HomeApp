@@ -3752,6 +3752,11 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 630061083}
   m_CullTransparentMesh: 0
+--- !u!4 &676202071 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1817617871140957405, guid: a68bf78d8fa684645b4c1d270c0043e1, type: 3}
+  m_PrefabInstance: {fileID: 1074528577}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &678259436
 GameObject:
   m_ObjectHideFlags: 0
@@ -10471,7 +10476,7 @@ MonoBehaviour:
   constrainToYAxis: 1
   smoothSpeed: 10
   drawLine: 1
-  target: {fileID: 79815715}
+  target: {fileID: 676202071}
   sourceOffset: {x: 0, y: 0, z: 0}
   targetOffset: {x: 0, y: 0, z: 0}
   lineWidth: 0.002

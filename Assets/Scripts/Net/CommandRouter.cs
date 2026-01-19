@@ -11,13 +11,15 @@ namespace Net
         private StateMachine state;
         private VideoController videoController;
         private GlbController glbController;
+        private PassthroughController passthroughController;
 
-        public void Init(ProjectSettings s, StateMachine st, VideoController vc, GlbController gc)
+        public void Init(ProjectSettings s, StateMachine st, VideoController vc, GlbController gc, PassthroughController pc)
         {
             settings = s;
             state = st;
             videoController = vc;
             glbController = gc;
+            passthroughController = pc;
             Debug.Log("[CommandRouter] Initialized.");
         }
 
@@ -94,6 +96,18 @@ namespace Net
                     {
                         ModelSetPointCmd cmd = JsonUtility.FromJson<ModelSetPointCmd>(json);
                         glbController.SetPointsSize(cmd.size);
+                        break;
+                    }
+                case "passthrough.enable":
+                    {
+                        _ = JsonUtility.FromJson<PassthroughEnableCmd>(json);
+                        passthroughController?.EnablePassthrough("server cmd");
+                        break;
+                    }
+                case "passthrough.disable":
+                    {
+                        _ = JsonUtility.FromJson<PassthroughDisableCmd>(json);
+                        passthroughController?.DisablePassthrough("server cmd");
                         break;
                     }
                 default:

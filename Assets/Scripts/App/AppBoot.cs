@@ -92,7 +92,7 @@ namespace App
             state = GetComponent<StateMachine>();
 
             wsClient.Init(projectSettings, state);
-            commandRouter.Init(projectSettings, state, videoController, glbController);
+            commandRouter.Init(projectSettings, state, videoController, glbController, passthroughController);
 
             // Wire state and cross-control between playback components
             if (videoController != null)

@@ -77,6 +77,16 @@ namespace App
             SetPassthrough(!passthroughEnabled, "left secondary button");
         }
 
+        public void EnablePassthrough(string reason = "external")
+        {
+            SetPassthrough(true, reason);
+        }
+
+        public void DisablePassthrough(string reason = "external")
+        {
+            SetPassthrough(false, reason);
+        }
+
         private void EnsurePassthroughOffForVideo()
         {
             if (passthroughEnabled || (arCameraManager != null && arCameraManager.enabled))
