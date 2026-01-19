@@ -46,6 +46,7 @@ namespace Playback
         private Animation animationPlayer; // Found on instantiated model, if any
         private float autoScale = 1f;
         private float userScale = 1f;
+        private float lastAppliedQuantizedScale = -1f; // last quantized user scale used for point LOD updates
         private float currentScaleInput = 1f; // External/user-friendly scale (0.1x - 10x)
         private bool suppressScaleUiEvents = false;
         private readonly List<PointCloudMeshInfo> pointCloudMeshes = new List<PointCloudMeshInfo>();
@@ -253,9 +254,15 @@ namespace Playback
             ApplyCompositeScale();
 
             // Use exact combined scale for LOD computation (no high floor) so LOD matches user intent
-            float totalScale = autoScale * userScale;
-            if (totalScale <= 0f) totalScale = 1e-6f;
-            ApplyPointCloudLod(totalScale);
+            // Quantize userScale so LOD only updates on coarse steps to avoid continuous rebuilds
+            float quantizedUserScale = QuantizeUserScale(userScale);
+            float lodScale = autoScale * quantizedUserScale;
+            if (lodScale <= 0f) lodScale = 1e-6f;
+            if (Mathf.Abs(quantizedUserScale - lastAppliedQuantizedScale) > 1e-6f)
+            {
+                ApplyPointCloudLod(lodScale);
+                lastAppliedQuantizedScale = quantizedUserScale;
+            }
 
             // Keep point size simple and stable; downsampling reduces overdraw instead
             if (pointsMaterial != null && pointsMaterial.HasProperty(_pointSizePropId))
@@ -403,6 +410,7 @@ namespace Playback
             autoScale = 1f;
             userScale = 1f;
             currentScaleInput = 1f;
+            lastAppliedQuantizedScale = -1f;
 
             UpdateScaleUi(currentScaleInput);
             SetScaleUiVisible(false);
@@ -454,7 +462,9 @@ namespace Playback
             if (hasPointTopology)
             {
                 CachePointCloudMeshes();
-                ApplyPointCloudLod(autoScale * userScale);
+                float initialQuant = QuantizeUserScale(userScale);
+                ApplyPointCloudLod(autoScale * initialQuant);
+                lastAppliedQuantizedScale = initialQuant;
                 ApplyPointCloudMaterialIfNeeded();
                 SetPointsSize(defaultPointSize);
             }
@@ -683,31 +693,61 @@ namespace Playback
 
         private int ComputeTargetPointCount(int originalCount, float totalScale)
         {
-            // Map directly from the user scale: 1x -> 30k, 5x -> 500k, 10x -> 1.5M
+            // Map userScale to a target point count with these rules:
+            // - 1x -> ~30k
+            // - 5x -> at least 800k OR originalCount/2, whichever is larger (but capped at originalCount)
+            // - 10x -> full originalCount
+            // Interpolate smoothly between these breakpoints.
             float us = Mathf.Max(userScale, 0.001f);
+
+            if (originalCount <= 0) return 0;
 
             int target;
             if (us <= 1f)
             {
-                target = 30000;
+                target = 60000;
             }
             else if (us <= 5f)
             {
+                // Interpolate from 30k at 1x to 500k at 5x
                 float t = (us - 1f) / 4f;
-                target = Mathf.RoundToInt(Mathf.Lerp(30000, 1000000, t));
+                target = Mathf.RoundToInt(Mathf.Lerp(60000f, 800000f, t));
             }
             else if (us <= 10f)
             {
+                // At 5x we want at least 500k OR half the original points (whichever is higher)
+                int baseAt5 = Mathf.Max(800000, Mathf.RoundToInt(originalCount / 2f));
+                baseAt5 = Mathf.Min(baseAt5, originalCount);
                 float t = (us - 5f) / 5f;
-                target = Mathf.RoundToInt(Mathf.Lerp(500000, 2000000, t));
+                target = Mathf.RoundToInt(Mathf.Lerp((float)baseAt5, (float)originalCount, t));
             }
             else
             {
-                target = 2000000;
+                // Above 10x: use full original count
+                target = Mathf.Min(originalCount, 1230000);
             }
 
             // Never exceed original count
-            return Mathf.Min(target, originalCount);
+            return Mathf.Clamp(target, 0, originalCount);
+        }
+
+        // Quantize userScale for LOD updates to reduce frequency of heavy point-cloud rebuilds:
+        // - when userScale <= 1, round to nearest 0.1
+        // - when userScale > 1, quantize to integer steps (1,2,3,...)
+        private float QuantizeUserScale(float us)
+        {
+            if (us <= 1f)
+            {
+                // Quantize to nearest 0.1 for values <= 1.0
+                float q = Mathf.Round(us * 10f) / 10f;
+                return Mathf.Clamp(q, minScale, 1f);
+            }
+            else
+            {
+                // Quantize to integer steps (floor) for values > 1.0 so e.g. 8.1..8.9 -> 8
+                float q = Mathf.Floor(us);
+                return Mathf.Clamp(q, 1f, maxScale);
+            }
         }
 
         private static bool HasPointTopologyInChildren(Transform root)
@@ -888,6 +928,28 @@ namespace Playback
             stateMachine = sm;
             videoController = vc;
             Debug.Log($"[GlbController] Injected StateMachine: {stateMachine != null}, VideoController: {videoController != null}");
+        }
+
+        // Refresh the point-cloud LOD to match the current transform scale immediately.
+        // This is intended for external actions that set transform scale directly (e.g., a Reset button).
+        public void RefreshLodFromTransform()
+        {
+            if (modelRoot == null) return;
+            float compositeScale = modelRoot.localScale.x; // assume uniform scale is used
+            if (autoScale <= 0f) autoScale = 1e-6f;
+            float computedUserScale = compositeScale / autoScale;
+            // Quantize according to rules and force-apply LOD
+            float quant = QuantizeUserScale(computedUserScale);
+            float lodScale = autoScale * quant;
+            ApplyPointCloudLod(lodScale);
+            lastAppliedQuantizedScale = quant;
+
+            // Update internal userScale and slider UI to reflect new value
+            userScale = quant;
+            currentScaleInput = Mathf.Clamp(quant, minScale, maxScale);
+            UpdateScaleUi(currentScaleInput);
+
+            Debug.Log($"[GlbController] RefreshLodFromTransform -> composite:{compositeScale} computedUser:{computedUserScale} quant:{quant}");
         }
     }
 }

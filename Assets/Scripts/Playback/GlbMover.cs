@@ -139,6 +139,8 @@ namespace Playback
             if (leftPrimary && !prevLeftPrimaryPressed && enableReset)
             {
                 ResetToInitial(root);
+                // Ensure point-cloud LOD matches the reset scale immediately
+                if (glbController != null) glbController.RefreshLodFromTransform();
             }
 
             prevLeftPrimaryPressed = leftPrimary;
@@ -195,6 +197,8 @@ namespace Playback
             if (glbController != null)
             {
                 glbController.SetScaleUiVisible(controlMode == ControlMode.Scale);
+                // Ensure the mode card text updates immediately to "Size" or "Position"
+                glbController.UpdateControlModeCard(controlMode == ControlMode.Scale);
             }
         }
 

@@ -17,6 +17,7 @@ namespace App
         [SerializeField] private Net.CommandRouter commandRouter;
         [SerializeField] private Playback.VideoController videoController;
         [SerializeField] private Playback.GlbController glbController;
+        [SerializeField] private PassthroughController passthroughController;
 
         [Header("UI")]
         [SerializeField] private TMP_Text serialText;
@@ -101,6 +102,10 @@ namespace App
             if (glbController != null)
             {
                 glbController.Inject(state, videoController);
+            }
+            if (passthroughController != null)
+            {
+                passthroughController.Inject(state);
             }
 
 
