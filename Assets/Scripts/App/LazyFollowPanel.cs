@@ -69,11 +69,23 @@ namespace App
         {
             if (cameraTransform == null) return;
 
-            // Continuously update desired transform based on camera + stored offset
-            UpdateTargetTransform();
+            if (ShouldFollow())
+            {
+                // Continuously update desired transform based on camera + stored offset
+                UpdateTargetTransform();
 
-            // Smoothly move towards target
-            transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * followSpeed);
+                // Smoothly move towards target
+                transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * followSpeed);
+            }
+        }
+
+        private bool ShouldFollow()
+        {
+            if (cameraTransform == null) return false;
+            Vector3 toPanel = transform.position - cameraTransform.position;
+            if (toPanel.sqrMagnitude <= 0.0001f) return false;
+            float angle = Vector3.Angle(cameraTransform.forward, toPanel.normalized);
+            return angle > activationAngle;
         }
 
         private void UpdateTargetTransform()

@@ -92,6 +92,16 @@ namespace App
             state = GetComponent<StateMachine>();
 
             wsClient.Init(projectSettings, state);
+
+            if (passthroughController == null)
+            {
+                passthroughController = FindObjectOfType<PassthroughController>();
+                if (passthroughController == null)
+                {
+                    Debug.LogWarning("[AppBoot] PassthroughController not found in scene.");
+                }
+            }
+
             commandRouter.Init(projectSettings, state, videoController, glbController, passthroughController);
 
             // Wire state and cross-control between playback components

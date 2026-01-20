@@ -16,26 +16,20 @@ namespace Playback
         [SerializeField] private float maxHeight = 5f;
         [SerializeField] private bool enableEditorControls = true; // allow keyboard fallback for testing in Editor
         [SerializeField] private float rotationSpeed = 90f;   // degrees per second around Y when rotating
-        [SerializeField] private float scaleAdjustSpeed = 1.5f; // units per second when nudging scale (0.1x - 10x)
+        [SerializeField] private float scaleAdjustSpeed = 0.3f; // units per second when nudging scale (0.1x - 10x)
 
         [Header("Reset")]
         [Tooltip("Press the primary button on the left controller to reset the object to its initial transform.")]
         [SerializeField] private bool enableReset = true;
 
-        private enum ControlMode
-        {
-            Position,
-            Scale
-        }
-
-        private ControlMode controlMode = ControlMode.Position;
-        private bool prevRightPrimaryPressed = false;
         private bool prevLeftPrimaryPressed = false;
 
         private bool initialCaptured = false;
         private Vector3 initialPosition = Vector3.zero;
         private Quaternion initialRotation = Quaternion.identity;
         private Vector3 initialLocalScale = Vector3.one;
+        private float lastScaleUiTime = -1f;
+        private const float ScaleUiVisibleSeconds = 1.5f;
 
         private Playback.GlbController glbController;
 
@@ -112,22 +106,19 @@ namespace Playback
                 }
             }
 
-            // Apply deadzone (note: we intentionally ignore rightAxis.x - right stick only controls height)
+            // Triggers (scale)
+            float leftTrigger = 0f;
+            float rightTrigger = 0f;
+            if (leftValid) left.TryGetFeatureValue(CommonUsages.trigger, out leftTrigger);
+            if (rightValid) right.TryGetFeatureValue(CommonUsages.trigger, out rightTrigger);
+
+            // Apply deadzone (note: right stick controls rotation + height)
             if (Mathf.Abs(leftAxis.x) < deadzone) leftAxis.x = 0f;
             if (Mathf.Abs(leftAxis.y) < deadzone) leftAxis.y = 0f;
             if (Mathf.Abs(rightAxis.y) < deadzone) rightAxis.y = 0f;
             if (Mathf.Abs(rightAxis.x) < deadzone) rightAxis.x = 0f;
-
-            // Detect right-primary button to toggle control mode
-            if (rightValid && right.TryGetFeatureValue(CommonUsages.primaryButton, out bool rightPrimary))
-            {
-                if (rightPrimary && !prevRightPrimaryPressed)
-                {
-                    ToggleControlMode();
-                }
-
-                prevRightPrimaryPressed = rightPrimary;
-            }
+            if (leftTrigger < 0.05f) leftTrigger = 0f;
+            if (rightTrigger < 0.05f) rightTrigger = 0f;
 
             // Detect left-primary button for reset (edge-triggered)
             bool leftPrimary = false;
@@ -149,10 +140,11 @@ namespace Playback
             bool hasPlanarInput = leftAxis != Vector2.zero;
             bool hasHeightInput = Mathf.Abs(rightAxis.y) > Mathf.Epsilon;
             bool hasRightXInput = Mathf.Abs(rightAxis.x) > Mathf.Epsilon;
-            if (!hasPlanarInput && !hasHeightInput && !hasRightXInput) return;
+            bool hasTriggerInput = Mathf.Abs(rightTrigger - leftTrigger) > 0f;
+            if (!hasPlanarInput && !hasHeightInput && !hasRightXInput && !hasTriggerInput) return;
 
             // Debug input for troubleshooting (include device validity flags)
-            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Mode: {controlMode}");
+            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Triggers: L{leftTrigger:0.00}/R{rightTrigger:0.00}");
 
             // Movement direction relative to camera forward/right projected to XZ plane
             Vector3 forward = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized : Vector3.forward;
@@ -161,8 +153,12 @@ namespace Playback
             // Compute planar movement (X/Z)
             Vector3 planarDelta = (forward * leftAxis.y + rightDir * leftAxis.x) * moveSpeed * Time.deltaTime;
 
-            // Compute height change (Y)
-            float newY = root.position.y + rightAxis.y * heightSpeed * Time.deltaTime;
+            // Compute height change (Y) from right stick only when vertical dominates
+            float newY = root.position.y;
+            if (Mathf.Abs(rightAxis.y) > Mathf.Abs(rightAxis.x))
+            {
+                newY = root.position.y + rightAxis.y * heightSpeed * Time.deltaTime;
+            }
             newY = Mathf.Clamp(newY, minHeight, maxHeight);
 
             // Apply position
@@ -170,35 +166,26 @@ namespace Playback
             newPos.y = newY;
             root.position = newPos;
 
-            // Apply rotation or scale based on current mode
-            if (Mathf.Abs(rightAxis.x) > 0f)
+            // Apply rotation (right stick X) only when horizontal dominates
+            if (Mathf.Abs(rightAxis.x) > Mathf.Abs(rightAxis.y))
             {
-                if (controlMode == ControlMode.Position)
-                {
-                    float yawDelta = rightAxis.x * rotationSpeed * Time.deltaTime;
-                    root.Rotate(Vector3.up, yawDelta, Space.World);
-                }
-                else // Scale mode
-                {
-                    if (glbController != null)
-                    {
-                        float scaleDelta = rightAxis.x * scaleAdjustSpeed * Time.deltaTime;
-                        glbController.AdjustScale(scaleDelta);
-                    }
-                }
+                float yawDelta = rightAxis.x * rotationSpeed * Time.deltaTime;
+                root.Rotate(Vector3.up, yawDelta, Space.World);
             }
-        }
 
-        private void ToggleControlMode()
-        {
-            controlMode = controlMode == ControlMode.Position ? ControlMode.Scale : ControlMode.Position;
-            Debug.Log($"[GlbMover] Switched control mode to {controlMode}.");
-
-            if (glbController != null)
+            // Apply scale (triggers)
+            if (hasTriggerInput)
             {
-                glbController.SetScaleUiVisible(controlMode == ControlMode.Scale);
-                // Ensure the mode card text updates immediately to "Size" or "Position"
-                glbController.UpdateControlModeCard(controlMode == ControlMode.Scale);
+                float scaleDelta = (rightTrigger - leftTrigger) * scaleAdjustSpeed * Time.deltaTime;
+                glbController.AdjustScale(scaleDelta);
+                glbController.SetScaleUiVisible(true);
+                lastScaleUiTime = Time.time;
+            }
+
+            if (lastScaleUiTime > 0f && Time.time - lastScaleUiTime > ScaleUiVisibleSeconds)
+            {
+                glbController.SetScaleUiVisible(false);
+                lastScaleUiTime = -1f;
             }
         }
 
@@ -208,6 +195,11 @@ namespace Playback
             root.position = initialPosition;
             root.rotation = initialRotation;
             root.localScale = initialLocalScale;
+            if (glbController != null)
+            {
+                glbController.SetScale(1f);
+                glbController.RefreshLodFromTransform();
+            }
         }
 
         // Try to get keyboard fallback input in editor. Works with both the old Input API and the new Input System (via reflection).

@@ -1,5 +1,6 @@
 using UnityEngine;
-using GLTFast;
+using UnityGLTF;
+using UnityGLTF.Loader;
 using System.Threading.Tasks;
 using System;
 using UnityEngine.UI;
@@ -42,7 +43,7 @@ namespace Playback
 
         private static int _pointSizePropId = Shader.PropertyToID("_PointSize");
 
-        private GltfImport currentModel;
+        private GLTFSceneImporter currentModel;
         private Animation animationPlayer; // Found on instantiated model, if any
         private float autoScale = 1f;
         private float userScale = 1f;
@@ -428,18 +429,25 @@ namespace Playback
         private async Task LoadAsync(string url, Action onReady)
         {
             currentModel?.Dispose();
-            currentModel = new GltfImport();
             // Log the URL being streamed/loaded so we can identify the source file
             Debug.Log($"[GlbController] Streaming/Loading model from URL: {url}");
-            bool success = await currentModel.Load(new Uri(url));
-            if (!success)
+            var uriDir = url.Substring(0, url.LastIndexOf('/') + 1);
+            var fileName = Path.GetFileName(url);
+            var importOpt = new ImportOptions
+            {
+                DataLoader = new UnityWebRequestLoader(uriDir)
+            };
+            currentModel = new GLTFSceneImporter(fileName, importOpt);
+            await currentModel.LoadSceneAsync();
+            var loaded = currentModel.LastLoadedScene;
+            if (loaded == null)
             {
                 Debug.LogError("[GlbController] Failed to load model.");
                 return;
             }
 
             Debug.Log("[GlbController] Model loaded successfully.");
-            await currentModel.InstantiateMainSceneAsync(modelRoot);
+            loaded.transform.SetParent(modelRoot, false);
             FinalizeLoadedModel();
 
             onReady?.Invoke();
@@ -694,37 +702,35 @@ namespace Playback
         private int ComputeTargetPointCount(int originalCount, float totalScale)
         {
             // Map userScale to a target point count with these rules:
-            // - 1x -> ~30k
-            // - 5x -> at least 800k OR originalCount/2, whichever is larger (but capped at originalCount)
-            // - 10x -> full originalCount
+            // - <=0.5x -> 50k (do not reduce further)
+            // - 1x -> 100k
+            // - 5x -> full originalCount
             // Interpolate smoothly between these breakpoints.
             float us = Mathf.Max(userScale, 0.001f);
 
             if (originalCount <= 0) return 0;
 
             int target;
-            if (us <= 1f)
+            if (us <= 0.5f)
             {
-                target = 60000;
+                target = 50000;
+            }
+            else if (us <= 1f)
+            {
+                // Interpolate from 50k at 0.5x to 100k at 1x
+                float t = (us - 0.5f) / 0.5f;
+                target = Mathf.RoundToInt(Mathf.Lerp(50000f, 100000f, t));
             }
             else if (us <= 5f)
             {
-                // Interpolate from 30k at 1x to 500k at 5x
+                // Interpolate from 100k at 1x to full at 5x
                 float t = (us - 1f) / 4f;
-                target = Mathf.RoundToInt(Mathf.Lerp(60000f, 800000f, t));
-            }
-            else if (us <= 10f)
-            {
-                // At 5x we want at least 500k OR half the original points (whichever is higher)
-                int baseAt5 = Mathf.Max(800000, Mathf.RoundToInt(originalCount / 2f));
-                baseAt5 = Mathf.Min(baseAt5, originalCount);
-                float t = (us - 5f) / 5f;
-                target = Mathf.RoundToInt(Mathf.Lerp((float)baseAt5, (float)originalCount, t));
+                target = Mathf.RoundToInt(Mathf.Lerp(100000f, (float)originalCount, t));
             }
             else
             {
-                // Above 10x: use full original count
-                target = Mathf.Min(originalCount, 1230000);
+                // At and above 5x: use full original count
+                target = originalCount;
             }
 
             // Never exceed original count
@@ -813,40 +819,7 @@ namespace Playback
             // Add Editable tag
             root.gameObject.tag = "Editable";
 
-            // Add MeshRenderer and MeshFilter to root if needed
-            var childMeshRenderer = root.GetComponentInChildren<MeshRenderer>();
-            var childMeshFilter = root.GetComponentInChildren<MeshFilter>();
-            if (childMeshRenderer != null && childMeshFilter != null)
-            {
-                var meshFilter = root.GetComponent<MeshFilter>();
-                if (meshFilter == null)
-                {
-                    meshFilter = root.gameObject.AddComponent<MeshFilter>();
-                }
-
-                var meshRenderer = root.GetComponent<MeshRenderer>();
-                if (meshRenderer == null)
-                {
-                    meshRenderer = root.gameObject.AddComponent<MeshRenderer>();
-                }
-
-                meshFilter.sharedMesh = childMeshFilter.sharedMesh;
-                meshRenderer.sharedMaterials = childMeshRenderer.sharedMaterials;
-            }
-
-            // Set glTF-unlit shader for all MeshRenderers
-            var meshRenderers = root.GetComponentsInChildren<MeshRenderer>();
-            Shader gltfUnlitShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (gltfUnlitShader != null)
-            {
-                foreach (var mr in meshRenderers)
-                {
-                    foreach (var mat in mr.materials)
-                    {
-                        mat.shader = gltfUnlitShader;
-                    }
-                }
-            }
+            // Shader assignment happens during import via UnityGLTF.
         }
 
         // Handle GET. Show network download progress, then load bytes via GLTFast
@@ -882,19 +855,21 @@ namespace Playback
 
                 var data = uwr.downloadHandler.data;
                 currentModel?.Dispose();
-                currentModel = new GltfImport();
-                var parseTask = currentModel.LoadGltfBinary(data);
-                while (!parseTask.IsCompleted) yield return null;
-                if (!parseTask.Result)
+                var importOpt = new ImportOptions();
+                var stream = new MemoryStream(data);
+                currentModel = new GLTFSceneImporter(stream, importOpt);
+                var loadTask = currentModel.LoadSceneAsync();
+                while (!loadTask.IsCompleted) yield return null;
+                stream.Dispose();
+                var loaded = currentModel.LastLoadedScene;
+                if (loaded == null)
                 {
                     Debug.LogError("[GlbController] Failed to parse GLB.");
                     currentModel?.Dispose();
                     yield break;
                 }
 
-                var instTask = currentModel.InstantiateMainSceneAsync(modelRoot);
-                while (!instTask.IsCompleted) yield return null;
-
+                loaded.transform.SetParent(modelRoot, false);
                 FinalizeLoadedModel();
             }
 
