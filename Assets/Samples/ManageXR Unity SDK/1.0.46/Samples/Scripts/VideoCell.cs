@@ -1,10 +1,15 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using Playback;
+using Launcher;
 
 namespace MXR.SDK.Samples {
     public class VideoCell : MonoBehaviour {
         public Video video;
         public FileInstallStatus status;
+        public ServerAsset serverAsset;
+        public VideoController videoController;
+        public string baseUrl;
         [SerializeField] Text title;
         [SerializeField] Image icon;
         [SerializeField] Image updateIndicator;
@@ -16,6 +21,21 @@ namespace MXR.SDK.Samples {
 
         [ContextMenu("Refresh")]
         public void Refresh() {
+            if (serverAsset != null)
+            {
+                if (title != null)
+                    title.text = serverAsset.originalFilename;
+
+                LoadServerThumbnail();
+
+                if (controllerRequirement != null) controllerRequirement.transform.parent.gameObject.SetActive(false);
+                if (internetRequirement != null) internetRequirement.transform.parent.gameObject.SetActive(false);
+                if (updateIndicator != null) updateIndicator.enabled = false;
+                if (readyIndicator != null) readyIndicator.enabled = false;
+                SetStatus(null);
+                return;
+            }
+
             title.text = video.title;
 
             // Instead of MXRStorage.GetFullPath(video.iconPath) you can also use
@@ -87,7 +107,62 @@ namespace MXR.SDK.Samples {
         }
 
         public void OnClick() {
+            if (serverAsset != null)
+            {
+                if (videoController == null)
+                    videoController = FindObjectOfType<VideoController>();
+
+                if (videoController == null)
+                {
+                    Debug.LogWarning("[VideoCell] VideoController not found in scene.");
+                    return;
+                }
+
+                string path = !string.IsNullOrEmpty(serverAsset.universalMp4Url)
+                    ? serverAsset.universalMp4Url
+                    : serverAsset.streamUrl;
+
+                string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, path);
+                ServerAssetUtils.ParseProjection(serverAsset.videoSettings?.projection, out string projection, out string stereo);
+                string mapping = "equirectangular";
+
+                videoController.PlayVideo(url, mapping, projection, stereo, serverAsset.originalFilename, serverAsset.id);
+                return;
+            }
+
             Debug.Log($"Play Video titled {video.title} from {MXRStorage.GetFullPath(video.videoPath)}");
+        }
+
+        void LoadServerThumbnail()
+        {
+            if (icon == null) return;
+
+            string thumbPath = (serverAsset.thumbnails != null && serverAsset.thumbnails.Length > 0)
+                ? serverAsset.thumbnails[0]
+                : null;
+
+            if (string.IsNullOrWhiteSpace(thumbPath))
+            {
+                icon.sprite = defaultIcon;
+                return;
+            }
+
+            string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, thumbPath);
+            new ImageDownloader().Load(url, TextureFormat.ARGB32, true,
+                result => {
+                    if (isBeingDestroyed) return;
+
+                    if (result == null)
+                    {
+                        icon.sprite = defaultIcon;
+                        return;
+                    }
+
+                    icon.sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    icon.preserveAspect = true;
+                },
+                error => icon.sprite = defaultIcon
+            );
         }
 
         bool isBeingDestroyed = false;

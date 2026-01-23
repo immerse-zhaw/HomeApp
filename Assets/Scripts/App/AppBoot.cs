@@ -1,7 +1,6 @@
 using UnityEngine;
 using TMPro;
 using MXR.SDK;
-using MXR.SDK.Samples;
 
 namespace App
 {
@@ -11,6 +10,8 @@ namespace App
     {
         [Header("Config")]
         [SerializeField] private ProjectSettings projectSettings;
+
+        public ProjectSettings ProjectSettings => projectSettings;
 
         [Header("Core refs")]
         [SerializeField] private Net.WsClient wsClient;

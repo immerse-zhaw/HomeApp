@@ -19,6 +19,12 @@ namespace Playback
         [SerializeField] private GameObject mxrPanel;
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
+
+        [Header("Spawn Settings")]
+        [Tooltip("Camera Reference for Spawn")]
+        [SerializeField] private Camera spawnCamera;
+        [Tooltip("Local offset from the camera")]
+        [SerializeField] private Vector3 cameraOffset = new Vector3(0f, 0f, 2f);
         [Header("Download Progress")]
         [SerializeField] private Slider downloadProgress;
 
@@ -60,6 +66,19 @@ namespace Playback
         // Expose model root so other scripts (e.g., GlbMover) can manipulate the loaded model.
         public Transform ModelRoot => modelRoot;
 
+        public bool TryGetCameraSpawnPosition(out Vector3 position)
+        {
+            var cam = spawnCamera != null ? spawnCamera : Camera.main;
+            if (cam == null)
+            {
+                position = modelRoot != null ? modelRoot.position : Vector3.zero;
+                return false;
+            }
+
+            position = cam.transform.TransformPoint(cameraOffset);
+            return true;
+        }
+
         public bool HasActiveModel()
         {
             if (modelRoot == null || modelRoot.childCount == 0)
@@ -72,10 +91,6 @@ namespace Playback
             return stateMachine.Current == AppState.ShowingModel;
         }
 
-        /// <summary>
-        /// Returns a concise diagnostic string describing why a model is (or isn't) considered active.
-        /// Useful for runtime debugging from other components.
-        /// </summary>
         public string GetModelStateDiagnostic()
         {
             var sb = new System.Text.StringBuilder();
@@ -457,6 +472,15 @@ namespace Playback
         {
             if (modelRoot == null) return;
 
+            var cam = spawnCamera != null ? spawnCamera : Camera.main;
+            if (cam == null)
+            {
+                Debug.LogWarning("[GlbController] No spawn camera found. Using existing modelRoot position.");
+            }
+            else
+            {
+                modelRoot.position = cam.transform.TransformPoint(cameraOffset);
+            }
             ScaleModelToUnitCube();
 
             animationPlayer = modelRoot.GetComponentInChildren<Animation>(true);

@@ -14,6 +14,12 @@ namespace App
         [SerializeField] private TMP_Text passthroughStatusText;
         [SerializeField] private GameObject passthroughCard;
 
+        [Header("Controller Visuals")]
+        [Tooltip("Left Controller Visual")]
+        [SerializeField] private GameObject leftControllerModel;
+        [Tooltip("Right Controller Visual")]
+        [SerializeField] private GameObject rightControllerModel;
+
         private bool prevLeftMenuPressed = false;
         private bool passthroughEnabled = false;
         private bool wasEnabledBeforeVideo = false;
@@ -35,6 +41,10 @@ namespace App
                 if (card != null) passthroughCard = card;
             }
             UpdateStatusText();
+
+            // Set controller visuals to match initial passthrough state
+            if (leftControllerModel != null) leftControllerModel.SetActive(!passthroughEnabled);
+            if (rightControllerModel != null) rightControllerModel.SetActive(!passthroughEnabled);
         }
 
         private void UpdateStatusText()
@@ -126,6 +136,11 @@ namespace App
         private void SetPassthrough(bool enable, string reason)
         {
             passthroughEnabled = enable;
+
+            // Directly hide/show controller visuals when passthrough changes
+            if (leftControllerModel != null) leftControllerModel.SetActive(!enable);
+            if (rightControllerModel != null) rightControllerModel.SetActive(!enable);
+
             if (arCameraManager != null) arCameraManager.enabled = enable;
             if (mainCamera != null) mainCamera.clearFlags = enable ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
             Debug.Log($"[PassthroughController] Passthrough {(enable ? "ENABLED" : "DISABLED")} ({reason}).");

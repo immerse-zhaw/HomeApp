@@ -192,7 +192,14 @@ namespace Playback
         private void ResetToInitial(Transform root)
         {
             if (root == null) return;
-            root.position = initialPosition;
+            if (glbController != null && glbController.TryGetCameraSpawnPosition(out var spawnPos))
+            {
+                root.position = spawnPos;
+            }
+            else
+            {
+                root.position = initialPosition;
+            }
             root.rotation = initialRotation;
             root.localScale = initialLocalScale;
             if (glbController != null)

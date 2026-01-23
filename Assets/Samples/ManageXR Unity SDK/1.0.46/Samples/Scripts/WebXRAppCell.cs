@@ -1,9 +1,14 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using Playback;
+using Launcher;
 
 namespace MXR.SDK.Samples {
     public class WebXRAppCell : MonoBehaviour {
         public WebXRApp webXRApp;
+        public ServerAsset serverAsset;
+        public GlbController glbController;
+        public string baseUrl;
         [SerializeField] Text title;
         [SerializeField] Image icon;
         [SerializeField] Sprite defaultIcon;
@@ -12,6 +17,18 @@ namespace MXR.SDK.Samples {
 
         [ContextMenu("Refresh")]
         public void Refresh() {
+            if (serverAsset != null)
+            {
+                if (title != null)
+                    title.text = serverAsset.originalFilename;
+
+                LoadServerThumbnail();
+
+                if (controllerRequirement != null) controllerRequirement.transform.parent.gameObject.SetActive(false);
+                if (internetRequirement != null) internetRequirement.transform.parent.gameObject.SetActive(false);
+                return;
+            }
+
             title.text = webXRApp.title;
 
             // Instead of MXRStorage.GetFullPath(webXRApp.iconPath) you can also use
@@ -54,10 +71,61 @@ namespace MXR.SDK.Samples {
         }
 
         public void OnClick() {
+            if (serverAsset != null)
+            {
+                if (glbController == null)
+                    glbController = FindObjectOfType<GlbController>();
+
+                if (glbController == null)
+                {
+                    Debug.LogWarning("[WebXRAppCell] GlbController not found in scene.");
+                    return;
+                }
+
+                string path = !string.IsNullOrEmpty(serverAsset.streamUrl)
+                    ? serverAsset.streamUrl
+                    : serverAsset.downloadUrl;
+
+                string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, path);
+                glbController.LoadModel(url, serverAsset.originalFilename, serverAsset.id);
+                return;
+            }
+
             if (!string.IsNullOrEmpty(webXRApp.url)) {
                 Debug.Log("Open URL " + webXRApp.url);
                 Application.OpenURL(webXRApp.url);
             }
+        }
+
+        void LoadServerThumbnail()
+        {
+            if (icon == null) return;
+
+            string thumbPath = (serverAsset.thumbnails != null && serverAsset.thumbnails.Length > 0)
+                ? serverAsset.thumbnails[0]
+                : null;
+
+            if (string.IsNullOrWhiteSpace(thumbPath))
+            {
+                icon.sprite = defaultIcon;
+                return;
+            }
+
+            string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, thumbPath);
+            new ImageDownloader().Load(url, TextureFormat.ARGB32, true,
+                result => {
+                    if (isBeingDestroyed) return;
+
+                    if (result == null) {
+                        icon.sprite = defaultIcon;
+                        return;
+                    }
+
+                    icon.sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    icon.preserveAspect = true;
+                },
+                error => icon.sprite = defaultIcon
+            );
         }
 
         bool isBeingDestroyed = false;

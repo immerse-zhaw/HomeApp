@@ -1,9 +1,14 @@
 using System;
 using System.Linq;
+using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Networking;
+using App;
+using Playback;
+using Launcher;
 
 namespace MXR.SDK.Samples {
     // NOTE: A simple library example that instantiates cells for content types.
@@ -34,9 +39,19 @@ namespace MXR.SDK.Samples {
         [SerializeField] GameObject errPanel;
         [SerializeField] Text errLabel;
 
+        [Header("Server Content")]
+        [SerializeField] ProjectSettings projectSettings;
+        [SerializeField] VideoController videoController;
+        [SerializeField] GlbController glbController;
+        [SerializeField] bool useServerContent = true;
+
         List<WebXRAppCell> webXRAppCells = new List<WebXRAppCell>();
         List<VideoCell> videoCells = new List<VideoCell>();
         List<RuntimeAppCell> appCells = new List<RuntimeAppCell>();
+
+        readonly List<ServerAsset> serverVideos = new List<ServerAsset>();
+        readonly List<ServerAsset> serverGlbs = new List<ServerAsset>();
+        bool serverAssetsLoaded = false;
         
         // Packages we do not want to show in the Apps list (easy to edit in one place).
         static readonly HashSet<string> HiddenPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -105,6 +120,11 @@ namespace MXR.SDK.Samples {
             webXRAppCellTemplate.gameObject.SetActive(false);
             videoCellTemplate.gameObject.SetActive(false);
 
+            if (videoController == null)
+                videoController = FindObjectOfType<VideoController>();
+            if (glbController == null)
+                glbController = FindObjectOfType<GlbController>();
+
             // Setup button listeners
             if (appsButton != null) appsButton.onClick.AddListener(() => ShowContent(ContentType.Apps));
             if (videosButton != null) videosButton.onClick.AddListener(() => ShowContent(ContentType.Videos));
@@ -124,6 +144,9 @@ namespace MXR.SDK.Samples {
             FileLogger.Log("[LibraryPanel] Triggering initial sync on startup");
             TriggerSync();
             
+            if (useServerContent)
+                StartCoroutine(FetchServerAssets());
+
             Debug.Log("The system infor");
         }
         
@@ -235,7 +258,24 @@ namespace MXR.SDK.Samples {
 
         void InstantiateWebXRCells() {
             if (webXRContainer == null) return;
-            
+
+            if (useServerContent && serverAssetsLoaded)
+            {
+                string baseUrl = GetWebsiteUrl();
+                serverGlbs.ForEach(x => {
+                    var instance = Instantiate(webXRAppCellTemplate, webXRContainer.transform);
+                    instance.gameObject.SetActive(true);
+                    instance.gameObject.name = x.originalFilename;
+                    instance.serverAsset = x;
+                    instance.baseUrl = baseUrl;
+                    instance.glbController = glbController;
+                    instance.Refresh();
+                    webXRAppCells.Add(instance);
+                    instance.gameObject.AddComponent<ForwardScrollToParent>();
+                });
+                return;
+            }
+
             MXRManager.System.RuntimeSettingsSummary.webXRApps.Values.ToList()
                 .ForEach(x => {
                     var instance = Instantiate(webXRAppCellTemplate, webXRContainer.transform);
@@ -250,7 +290,24 @@ namespace MXR.SDK.Samples {
 
         void InstantaiteVideoCells() {
             if (videosContainer == null) return;
-            
+
+            if (useServerContent && serverAssetsLoaded)
+            {
+                string baseUrl = GetWebsiteUrl();
+                serverVideos.ForEach(x => {
+                    var instance = Instantiate(videoCellTemplate, videosContainer.transform);
+                    instance.gameObject.SetActive(true);
+                    instance.gameObject.name = x.originalFilename;
+                    instance.serverAsset = x;
+                    instance.baseUrl = baseUrl;
+                    instance.videoController = videoController;
+                    instance.Refresh();
+                    videoCells.Add(instance);
+                    instance.gameObject.AddComponent<ForwardScrollToParent>();
+                });
+                return;
+            }
+
             MXRManager.System.RuntimeSettingsSummary.videos.Values.ToList()
                 .ForEach(x => {
                     var instance = Instantiate(videoCellTemplate, videosContainer.transform);
@@ -262,6 +319,68 @@ namespace MXR.SDK.Samples {
                     videoCells.Add(instance);
                     instance.gameObject.AddComponent<ForwardScrollToParent>();
                 });
+        }
+
+        IEnumerator FetchServerAssets()
+        {
+            string baseUrl = GetWebsiteUrl();
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                FileLogger.LogWarning("[LibraryPanel] Website URL not set. Server assets will not load.");
+                yield break;
+            }
+
+            string listUrl = baseUrl.TrimEnd('/') + "/api/storage/assets/listAssets";
+            using (var req = UnityWebRequest.Get(listUrl))
+            {
+                yield return req.SendWebRequest();
+
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    FileLogger.LogWarning($"[LibraryPanel] Failed to fetch server assets: {req.error}");
+                    yield break;
+                }
+
+                string json = req.downloadHandler.text;
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    FileLogger.LogWarning("[LibraryPanel] Server asset list is empty.");
+                    yield break;
+                }
+
+                var wrapped = "{\"items\":" + json + "}";
+                var list = JsonUtility.FromJson<ServerAssetList>(wrapped);
+                serverVideos.Clear();
+                serverGlbs.Clear();
+
+                if (list?.items != null)
+                {
+                    foreach (var item in list.items)
+                    {
+                        if (item == null || item.hidden) continue;
+                        if (string.Equals(item.type, "video", StringComparison.OrdinalIgnoreCase))
+                            serverVideos.Add(item);
+                        else if (string.Equals(item.type, "glb", StringComparison.OrdinalIgnoreCase))
+                            serverGlbs.Add(item);
+                    }
+                }
+
+                serverAssetsLoaded = true;
+                DestroyContentCells();
+                InstantiateContentCells();
+            }
+        }
+
+        string GetWebsiteUrl()
+        {
+            if (projectSettings == null)
+            {
+                var appBoot = FindObjectOfType<AppBoot>();
+                if (appBoot != null)
+                    projectSettings = appBoot.ProjectSettings;
+            }
+
+            return projectSettings != null ? projectSettings.WebsiteUrl : null;
         }
 
         void InstantiateAppCells() {
