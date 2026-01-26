@@ -3,6 +3,7 @@ using UnityEngine.Video;
 using UnityEngine.XR;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 using System.IO;
 using App;
 
@@ -34,9 +35,28 @@ namespace Playback
             [SerializeField] private Sprite pauseSprite;
             [SerializeField] private TextMeshProUGUI timeText;
 
+            [Header("Control Panel Placement")]
+            [Tooltip("Optional. If not set, falls back to Camera.main.")]
+            [SerializeField] private Transform userCameraTransform;
+
+            [Tooltip("Offset in camera-local space (x=right, y=up, z=forward).")]
+            [SerializeField] private Vector3 controlPanelOffset = new Vector3(0f, -0.2f, 0.6f);
+
+            [Tooltip("If enabled, the panel will face the camera when shown. Use Rotation Offset to fine-tune orientation.")]
+            [SerializeField] private bool faceControlPanelToCamera = true;
+
+            [Tooltip("Applied after facing the camera (euler degrees). Useful if the UI appears mirrored/backwards.")]
+            [SerializeField] private Vector3 controlPanelRotationOffsetEuler = Vector3.zero;
+
+            [Header("Control Panel Auto-Hide")]
+            [SerializeField] private bool autoHideControlPanel = true;
+            [SerializeField] private float controlPanelAutoHideSeconds = 5f;
+
             private bool isPlaying = false;
             private bool isDragging = false;
             private bool prevLeftPrimaryPressed = false; // for edge-detecting left primary button presses
+
+            private Coroutine controlPanelAutoHideCoroutine;
 
             // Injected references
             private StateMachine stateMachine;
@@ -315,7 +335,93 @@ namespace Playback
             {
                 if (controlPanel != null)
                 {
+                    if (visible)
+                    {
+                        PlaceControlPanelInFrontOfCamera();
+                        RestartControlPanelAutoHideTimer();
+                    }
+                    else
+                    {
+                        StopControlPanelAutoHideTimer();
+                    }
                     controlPanel.SetActive(visible);
+                }
+            }
+
+            private void RestartControlPanelAutoHideTimer()
+            {
+                StopControlPanelAutoHideTimer();
+
+                if (!autoHideControlPanel)
+                {
+                    return;
+                }
+
+                if (controlPanelAutoHideSeconds <= 0f)
+                {
+                    return;
+                }
+
+                controlPanelAutoHideCoroutine = StartCoroutine(AutoHideControlPanelAfterDelay(controlPanelAutoHideSeconds));
+            }
+
+            private void StopControlPanelAutoHideTimer()
+            {
+                if (controlPanelAutoHideCoroutine != null)
+                {
+                    StopCoroutine(controlPanelAutoHideCoroutine);
+                    controlPanelAutoHideCoroutine = null;
+                }
+            }
+
+            private IEnumerator AutoHideControlPanelAfterDelay(float seconds)
+            {
+                yield return new WaitForSeconds(seconds);
+
+                controlPanelAutoHideCoroutine = null;
+
+                if (controlPanel != null && controlPanel.activeSelf)
+                {
+                    SetControlPanelVisibility(false);
+                }
+            }
+
+            private Transform GetUserCameraTransform()
+            {
+                if (userCameraTransform != null)
+                {
+                    return userCameraTransform;
+                }
+
+                var mainCam = Camera.main;
+                return mainCam != null ? mainCam.transform : null;
+            }
+
+            private void PlaceControlPanelInFrontOfCamera()
+            {
+                if (controlPanel == null)
+                {
+                    return;
+                }
+
+                var camTransform = GetUserCameraTransform();
+                if (camTransform == null)
+                {
+                    Debug.LogWarning("[VideoController] Cannot place control panel: no user camera transform assigned and no Camera.main found.");
+                    return;
+                }
+
+                var panelTransform = controlPanel.transform;
+                panelTransform.position = camTransform.TransformPoint(controlPanelOffset);
+
+                if (faceControlPanelToCamera)
+                {
+                    // Make the panel face the camera (so its forward points toward the camera).
+                    var toCamera = camTransform.position - panelTransform.position;
+                    if (toCamera.sqrMagnitude > 0.0001f)
+                    {
+                        panelTransform.rotation = Quaternion.LookRotation(toCamera.normalized, camTransform.up) * Quaternion.Euler(controlPanelRotationOffsetEuler);
+                    }
                 }
             }
 
