@@ -3,6 +3,8 @@ using UnityEngine.XR;
 using UnityEngine.XR.ARFoundation;
 using TMPro;
 
+using UnityEngine.UI;
+
 namespace App
 {
     public class PassthroughController : MonoBehaviour
@@ -13,6 +15,14 @@ namespace App
         [Header("UI")]
         [SerializeField] private TMP_Text passthroughStatusText;
         [SerializeField] private GameObject passthroughCard;
+
+        [Header("Passthrough Icon")]
+        [Tooltip("Image component to update when passthrough is toggled.")]
+        [SerializeField] private Image passthroughImage;
+        [Tooltip("Sprite to show when passthrough is ON.")]
+        [SerializeField] private Sprite passthroughOnSprite;
+        [Tooltip("Sprite to show when passthrough is OFF.")]
+        [SerializeField] private Sprite passthroughOffSprite;
 
         [Header("Controller Visuals")]
         [Tooltip("Left Controller Visual")]
@@ -145,6 +155,12 @@ namespace App
             if (mainCamera != null) mainCamera.clearFlags = enable ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
             Debug.Log($"[PassthroughController] Passthrough {(enable ? "ENABLED" : "DISABLED")} ({reason}).");
             UpdateStatusText();
+
+            // Update passthrough image sprite
+            if (passthroughImage != null)
+            {
+                passthroughImage.sprite = enable ? passthroughOnSprite : passthroughOffSprite;
+            }
         }
 
         private void SetPassthroughCardVisible(bool visible)

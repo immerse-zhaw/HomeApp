@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.XR;
 
+using UnityEngine.UI;
+
 namespace Playback
 {
     // Simple controller that moves the currently-loaded GLB (via GlbController.ModelRoot)
@@ -19,7 +21,6 @@ namespace Playback
         [SerializeField] private float scaleAdjustSpeed = 0.3f; // units per second when nudging scale (0.1x - 10x)
 
         [Header("Reset")]
-        [Tooltip("Press the primary button on the left controller to reset the object to its initial transform.")]
         [SerializeField] private bool enableReset = true;
 
         private bool prevLeftPrimaryPressed = false;
@@ -32,6 +33,19 @@ namespace Playback
         private const float ScaleUiVisibleSeconds = 1.5f;
 
         private Playback.GlbController glbController;
+
+        [Header("Scale UI Buttons")]
+        [Tooltip("Background image for the scale up button.")]
+        [SerializeField] private Image scaleUpImage;
+        [Tooltip("Background image for the scale down button.")]
+        [SerializeField] private Image scaleDownImage;
+        [Tooltip("Normal color for scale buttons.")]
+        [SerializeField] private Color scaleButtonNormalColor = Color.white;
+        [Tooltip("Highlight color for scale buttons (when pressed).")]
+        [SerializeField] private Color scaleButtonHighlightColor = new Color(0.5f, 0.8f, 1f, 1f);
+
+        private bool wasScalingUp = false;
+        private bool wasScalingDown = false;
 
         void Start()
         {
@@ -112,6 +126,30 @@ namespace Playback
             if (leftValid) left.TryGetFeatureValue(CommonUsages.trigger, out leftTrigger);
             if (rightValid) right.TryGetFeatureValue(CommonUsages.trigger, out rightTrigger);
 
+            // Detect scale up/down intent
+            bool scalingUp = rightTrigger > leftTrigger + 0.01f;
+            bool scalingDown = leftTrigger > rightTrigger + 0.01f;
+
+            // Update scale up button color
+            if (scaleUpImage != null)
+            {
+                if (scalingUp && !wasScalingUp)
+                    scaleUpImage.color = scaleButtonHighlightColor;
+                else if (!scalingUp && wasScalingUp)
+                    scaleUpImage.color = scaleButtonNormalColor;
+            }
+            wasScalingUp = scalingUp;
+
+            // Update scale down button color
+            if (scaleDownImage != null)
+            {
+                if (scalingDown && !wasScalingDown)
+                    scaleDownImage.color = scaleButtonHighlightColor;
+                else if (!scalingDown && wasScalingDown)
+                    scaleDownImage.color = scaleButtonNormalColor;
+            }
+            wasScalingDown = scalingDown;
+
             // Apply deadzone (note: right stick controls rotation + height)
             if (Mathf.Abs(leftAxis.x) < deadzone) leftAxis.x = 0f;
             if (Mathf.Abs(leftAxis.y) < deadzone) leftAxis.y = 0f;
@@ -180,12 +218,20 @@ namespace Playback
                 glbController.AdjustScale(scaleDelta);
                 glbController.SetScaleUiVisible(true);
                 lastScaleUiTime = Time.time;
+                // Keep highlight while pressed
+                if (scaleUpImage != null && scalingUp)
+                    scaleUpImage.color = scaleButtonHighlightColor;
+                if (scaleDownImage != null && scalingDown)
+                    scaleDownImage.color = scaleButtonHighlightColor;
             }
 
             if (lastScaleUiTime > 0f && Time.time - lastScaleUiTime > ScaleUiVisibleSeconds)
             {
                 glbController.SetScaleUiVisible(false);
                 lastScaleUiTime = -1f;
+                // Reset button colors
+                if (scaleUpImage != null) scaleUpImage.color = scaleButtonNormalColor;
+                if (scaleDownImage != null) scaleDownImage.color = scaleButtonNormalColor;
             }
         }
 
