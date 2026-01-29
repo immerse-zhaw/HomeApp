@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Linq;
 using TMPro;
 using MXR.SDK;
 
@@ -24,6 +25,15 @@ namespace App
         [SerializeField] private TMP_Text serialText;
         [SerializeField] private TMP_Text appsTrackedText;
         [SerializeField] private TMP_Text videosTrackedText;
+        [SerializeField] private TMP_Text castingText;
+        [Tooltip("Root GameObject for the casting UI (e.g. 'Recording'). If assigned, this will be enabled/disabled when casting starts/stops.")]
+        [SerializeField] private GameObject castingRoot;
+
+        [Header("Device Labeling")]
+        [Tooltip("If enabled, display the device name (from RuntimeSettingsSummary) in the device label when available. Otherwise show the serial number.")]
+        [SerializeField] private bool showDeviceNameInUi = false;
+        [Tooltip("Text to display when neither device name nor serial are available.")]
+        [SerializeField] private string deviceUnknownLabel = "unknown";
 
         private StateMachine state;
 
@@ -70,6 +80,8 @@ namespace App
 
             UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
             MXRManager.System.OnDeviceStatusChange += UpdateDeviceStatusLabel;
+            // Also update when runtime settings summary changes (deviceName can arrive here)
+            MXRManager.System.OnRuntimeSettingsSummaryChange += (_) => UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
 
             if (MXRManager.System.DeviceStatus != null)
             {
@@ -124,6 +136,18 @@ namespace App
             wsClient.Connect();
 
             Debug.Log("[AppBoot] Ready.");
+
+            // Convenience: if casting UI wasn't assigned in the inspector, try to auto-find the common Recording UI created in the scene hierarchy.
+            if (castingRoot == null)
+            {
+                var go = GameObject.Find("Recording");
+                if (go != null) castingRoot = go;
+            }
+            if (castingText == null && castingRoot != null)
+            {
+                var txt = castingRoot.GetComponentInChildren<TMP_Text>();
+                if (txt != null) castingText = txt;
+            }
         }
 
         void OnDestroy()
@@ -144,21 +168,50 @@ namespace App
                 return;
             }
 
+            // Device label: either deviceName (from RuntimeSettingsSummary) or serial depending on inspector toggle
             if (serialText != null)
             {
-                serialText.text = status.serial;
+                string label = deviceUnknownLabel;
+
+                if (showDeviceNameInUi)
+                {
+                    label = MXRManager.System?.RuntimeSettingsSummary?.deviceName ?? status.serial ?? deviceUnknownLabel;
+                }
+                else
+                {
+                    label = status.serial ?? MXRManager.System?.RuntimeSettingsSummary?.deviceName ?? deviceUnknownLabel;
+                }
+
+                serialText.text = label;
             }
-            
+
             if (appsTrackedText != null)
             {
                 int appCount = status.appStatuses?.Count ?? 0;
                 appsTrackedText.text = appCount.ToString();
             }
-            
+
             if (videosTrackedText != null)
             {
                 int videoCount = status.videoStatuses?.Count ?? 0;
                 videosTrackedText.text = videoCount.ToString();
+            }
+
+            // Casting / streaming indicator: Meta-specific flag OR any ScreenCast in ACTIVE state
+            bool metaScreencast = status?.oculusScreencastActive == true;
+            bool anyActiveScreenCast = status?.screenCasts?.Values?.Any(sc => sc != null && sc.state == MXR.SDK.ScreenCast.State.ACTIVE) == true;
+            bool isCasting = metaScreencast || anyActiveScreenCast;
+
+            // Prefer enabling the provided root (so your Recording object is shown). Fall back to the text GameObject if no root assigned.
+            if (castingRoot != null)
+            {
+                castingRoot.SetActive(isCasting);
+            }
+
+            if (castingText != null)
+            {
+                castingText.gameObject.SetActive(isCasting);
+                castingText.text = isCasting ? "Casting: ON" : "Casting: OFF";
             }
         }
     }
