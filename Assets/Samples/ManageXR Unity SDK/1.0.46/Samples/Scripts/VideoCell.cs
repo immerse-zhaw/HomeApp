@@ -126,7 +126,9 @@ namespace MXR.SDK.Samples {
                 ServerAssetUtils.ParseProjection(serverAsset.videoSettings?.projection, out string projection, out string stereo);
                 string mapping = "equirectangular";
 
-                videoController.PlayVideo(url, mapping, projection, stereo, serverAsset.originalFilename, serverAsset.id);
+                // Set projection first, then play video
+                videoController.ChangeProjectionMapping(mapping, projection, stereo);
+                videoController.PlayVideo(url, serverAsset.originalFilename, serverAsset.id);
                 return;
             }
 

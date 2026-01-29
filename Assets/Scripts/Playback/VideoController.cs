@@ -58,6 +58,11 @@ namespace Playback
 
             private Coroutine controlPanelAutoHideCoroutine;
 
+            // Current projection settings set via ChangeProjectionMapping
+            private string currentMapping = "equirectangular";
+            private string currentProjection = "360";
+            private string currentStereo = "mono";
+
             // Injected references
             private StateMachine stateMachine;
             private GlbController glbController;
@@ -143,7 +148,7 @@ namespace Playback
                 return $"{minutes}:{seconds:00}";
             }
 
-            public void PlayVideo(string url, string mapping, string projection, string stereo, string name = null, string fileId = null)
+            public void PlayVideo(string url, string name = null, string fileId = null)
             {   
                 // Ensure GLB content is closed before playing video
                 if (glbController != null)
@@ -178,42 +183,43 @@ namespace Playback
                     mxrPanel.SetActive(false);
                 }
 
-                bool useCube = mapping.ToLower().Contains("cube");
+                // Apply current projection settings (set via ChangeProjectionMapping)
+                ApplyProjectionSettings();
+
+                Debug.Log($"[VideoController] Playing video: {url} | Mapping: {currentMapping} | Projection: {currentProjection} | Stereo: {currentStereo}");
+            }
+
+            public void ChangeProjectionMapping(string mapping, string projection, string stereo)
+            {
+                // Store the new projection settings
+                currentMapping = mapping;
+                currentProjection = projection;
+                currentStereo = stereo;
+
+                // Apply them immediately if video is playing
+                ApplyProjectionSettings();
+                Seek(0);
+
+                Debug.Log($"[VideoController] Changed Projection: Mapping: {mapping} | Projection: {projection} | Stereo: {stereo}");
+            }
+
+            private void ApplyProjectionSettings()
+            {
+                bool useCube = currentMapping.ToLower().Contains("cube");
                 RenderSettings.skybox = useCube ? skyboxCubemap : skyboxEquirect;
 
                 if (videoPlayer.targetTexture)
                     RenderSettings.skybox.SetTexture("_MainTex", videoPlayer.targetTexture);
 
-                RenderSettings.skybox.SetInt("_ImageType", projection.Contains("180") ? 1 : 0);
+                RenderSettings.skybox.SetInt("_ImageType", currentProjection.Contains("180") ? 1 : 0);
 
-                int layout = stereo switch
+                int layout = currentStereo switch
                 {
                     "sbs" or "lr" or "sidebyside" => 1,
                     "tb" or "overunder" or "topbottom" => 2,
                     _ => 0
                 };
                 RenderSettings.skybox.SetInt("_Layout", layout);
-
-                Debug.Log($"[VideoController] Playing video: {url} | Mapping: {mapping} | Projection: {projection} | Stereo: {stereo}");
-            }
-
-            public void ChangeProjectionMapping(string mapping, string projection, string stereo)
-            {
-                bool useCube = mapping.ToLower().Contains("cube");
-                RenderSettings.skybox = useCube ? skyboxCubemap : skyboxEquirect;
-
-                RenderSettings.skybox.SetInt("_ImageType", projection.Contains("180") ? 1 : 0);
-
-                int layout = stereo switch
-                {
-                    "sbs" or "lr" or "sidebyside" => 1,
-                    "tb" or "overunder" or "topbottom" => 2,
-                    _ => 0
-                };
-                RenderSettings.skybox.SetInt("_Layout", layout);
-                Seek(0);
-
-                Debug.Log($"[VideoController] Changed Projection: Mapping: {mapping} | Projection: {projection} | Stereo: {stereo}");
             }
 
             public void Seek(double timeCode)

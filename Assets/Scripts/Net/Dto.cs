@@ -45,9 +45,6 @@ namespace Net.Messages
         public string name;
         public string url;
         public string fileId;
-        public string mapping = "equirectangular"; // "equirectangular" | "cubemap"
-        public string projection = "360"; // "360" | "180"
-        public string stereo = "mono";    // "mono" | "tb" | "sbs"
     }
 
     [Serializable]
