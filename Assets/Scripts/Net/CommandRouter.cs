@@ -33,7 +33,7 @@ namespace Net
                     {
                         PlayVideoCmd cmd = JsonUtility.FromJson<PlayVideoCmd>(json);
                         string url = settings.WebsiteUrl + cmd.url;
-                        videoController.PlayVideo(url, cmd.mapping, cmd.projection, cmd.stereo, cmd.name, cmd.fileId);
+                        videoController.PlayVideo(url, cmd.name, cmd.fileId);
                         break;
                     }
                 case "video.changeMapping":
