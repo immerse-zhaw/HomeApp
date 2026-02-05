@@ -160,7 +160,46 @@ namespace MXR.SDK.Samples {
                         return;
                     }
 
-                    icon.sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    // Check if this is a top-bottom stereo video
+                    bool isTopBottomStereo = false;
+                    
+                    if (serverAsset.videoSettings != null && !string.IsNullOrEmpty(serverAsset.videoSettings.projection))
+                    {
+                        ServerAssetUtils.ParseProjection(serverAsset.videoSettings.projection, out string projection, out string stereo);
+                        
+                        if (stereo != null)
+                        {
+                            string stereoLower = stereo.ToLower();
+                            isTopBottomStereo = stereoLower == "tb" || 
+                                               (stereoLower.Contains("top") && stereoLower.Contains("bottom"));
+                        }
+                    }
+
+                    Texture2D finalTexture = result;
+                    
+                    // If top-bottom stereo, crop the upper half and stretch it vertically
+                    if (isTopBottomStereo)
+                    {
+                        int halfHeight = result.height / 2;
+                        Color[] topHalfPixels = result.GetPixels(0, halfHeight, result.width, halfHeight);
+                        
+                        finalTexture = new Texture2D(result.width, result.height, result.format, false);
+                        
+                        // Stretch the top half to fill the full height
+                        for (int y = 0; y < result.height; y++)
+                        {
+                            for (int x = 0; x < result.width; x++)
+                            {
+                                int sourceY = Mathf.FloorToInt((float)y / result.height * halfHeight);
+                                int sourceIndex = sourceY * result.width + x;
+                                finalTexture.SetPixel(x, y, topHalfPixels[sourceIndex]);
+                            }
+                        }
+                        
+                        finalTexture.Apply();
+                    }
+
+                    icon.sprite = Sprite.Create(finalTexture, new Rect(0, 0, finalTexture.width, finalTexture.height), Vector2.one / 2);
                     icon.preserveAspect = true;
                 },
                 error => icon.sprite = defaultIcon

@@ -229,9 +229,33 @@ namespace MXR.SDK.Samples {
 
         void OnDeviceStatusChange(DeviceStatus obj) {
             if (obj == null) return;
-            Debug.Log("Device Status changed, destroy and instantiate cells");
-            DestroyContentCells();
-            InstantiateContentCells();
+            Debug.Log("Device Status changed, refreshing existing cells");
+            RefreshExistingCells();
+        }
+        
+        void RefreshExistingCells() {
+            // Update existing app cells with new status instead of recreating
+            foreach (var cell in appCells) {
+                if (cell != null && cell.runtimeApp != null) {
+                    cell.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(cell.runtimeApp);
+                    cell.Refresh();
+                }
+            }
+            
+            // Update existing video cells with new status
+            foreach (var cell in videoCells) {
+                if (cell != null && cell.video != null) {
+                    cell.status = MXRManager.System.DeviceStatus.FileInstallStatusForVideo(cell.video);
+                    cell.Refresh();
+                }
+            }
+            
+            // WebXR cells don't have status, but refresh them anyway
+            foreach (var cell in webXRAppCells) {
+                if (cell != null) {
+                    cell.Refresh();
+                }
+            }
         }
 
         // Destroy all the cell instances of each content type 

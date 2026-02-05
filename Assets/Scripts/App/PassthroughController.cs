@@ -53,8 +53,8 @@ namespace App
             UpdateStatusText();
 
             // Set controller visuals to match initial passthrough state
-            if (leftControllerModel != null) leftControllerModel.SetActive(!passthroughEnabled);
-            if (rightControllerModel != null) rightControllerModel.SetActive(!passthroughEnabled);
+            //if (leftControllerModel != null) leftControllerModel.SetActive(!passthroughEnabled);
+            //if (rightControllerModel != null) rightControllerModel.SetActive(!passthroughEnabled);
         }
 
         private void UpdateStatusText()
@@ -148,8 +148,8 @@ namespace App
             passthroughEnabled = enable;
 
             // Directly hide/show controller visuals when passthrough changes
-            if (leftControllerModel != null) leftControllerModel.SetActive(!enable);
-            if (rightControllerModel != null) rightControllerModel.SetActive(!enable);
+            //if (leftControllerModel != null) leftControllerModel.SetActive(!enable);
+            //if (rightControllerModel != null) rightControllerModel.SetActive(!enable);
 
             if (arCameraManager != null) arCameraManager.enabled = enable;
             if (mainCamera != null) mainCamera.clearFlags = enable ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
