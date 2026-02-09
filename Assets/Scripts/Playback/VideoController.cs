@@ -99,6 +99,9 @@ namespace Playback
                 }
             }
 
+            private float lastSkipTime = -100f;
+            private const float skipCooldown = 3f;
+
             private void Update()
             {
                 if (videoPlayer.isPrepared)
@@ -114,19 +117,39 @@ namespace Playback
                     UpdateTimeText();
                 }
 
-                // Left-hand primary button toggles the control panel when a video is playing
-                if (controlPanel != null && isPlaying)
+                // Video Mode Controls
+                if (stateMachine != null && stateMachine.Current == AppState.PlayingVideo)
                 {
                     var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-                    if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryPressed))
+                    if (leftHand.isValid)
                     {
-                        if (primaryPressed && !prevLeftPrimaryPressed)
+                        // Stick Left/Right for Seek with Cooldown
+                        if (Time.time - lastSkipTime > skipCooldown)
                         {
-                            bool visible = controlPanel.activeSelf;
-                            SetControlPanelVisibility(!visible);
-                            Debug.Log($"[VideoController] Toggled control panel -> {!visible} via left primary button.");
+                            if (leftHand.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 axis))
+                            {
+                                if (axis.x < -0.5f) // Stick Left -> 10s behind
+                                {
+                                    Backward10s();
+                                    lastSkipTime = Time.time;
+                                }
+                                else if (axis.x > 0.5f) // Stick Right -> 10s ahead
+                                {
+                                    Forward10s();
+                                    lastSkipTime = Time.time;
+                                }
+                            }
                         }
-                        prevLeftPrimaryPressed = primaryPressed;
+
+                        // Primary Button -> Play/Pause
+                        if (leftHand.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryPressed))
+                        {
+                            if (primaryPressed && !prevLeftPrimaryPressed)
+                            {
+                                TogglePlayPause();
+                            }
+                            prevLeftPrimaryPressed = primaryPressed;
+                        }
                     }
                 }
             }

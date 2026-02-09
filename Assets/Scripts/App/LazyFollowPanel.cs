@@ -13,6 +13,7 @@ namespace App
         [Header("Follow Settings")]
         [SerializeField] private Transform cameraTransform;
         [SerializeField] private float distanceFromCamera = 2f;
+        [SerializeField] private float maxFollowDistance = 10f;
         [SerializeField] private float followSpeed = 2f;
         [SerializeField] private float heightOffset = 0f;
         [SerializeField] private XRGrabInteractable grabInteractable;
@@ -99,6 +100,13 @@ namespace App
 
             // Convert camera-local offset back to world space
             targetPosition = cameraTransform.TransformPoint(relativeOffset);
+
+            // Constraint: Clamp target position to maxFollowDistance
+            Vector3 toTarget = targetPosition - cameraTransform.position;
+            if (toTarget.magnitude > maxFollowDistance)
+            {
+                targetPosition = cameraTransform.position + toTarget.normalized * maxFollowDistance;
+            }
         }
 
         private void PositionPanelInFrontOfUser()

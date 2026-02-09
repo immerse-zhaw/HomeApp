@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.XR;
 using UnityGLTF;
 using UnityGLTF.Loader;
 using System.Threading.Tasks;
@@ -43,6 +44,12 @@ namespace Playback
         [Tooltip("Root GameObjects for UI instruction cards. These will be activated when a 3D model is being shown and deactivated otherwise.")]
         [SerializeField] private System.Collections.Generic.List<GameObject> instructionCards = new System.Collections.Generic.List<GameObject>();
 
+        [Header("Animation Controls")]
+        [SerializeField] private GameObject animationControlPanel;
+        [SerializeField] private TMP_Text animationNameText;
+        [SerializeField] private Button nextAnimButton;
+        [SerializeField] private Button prevAnimButton;
+
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
@@ -51,6 +58,10 @@ namespace Playback
 
         private GLTFSceneImporter currentModel;
         private Animation animationPlayer; // Found on instantiated model, if any
+        private List<string> availableAnimations = new List<string>();
+        private int currentAnimIndex = -1;
+        private bool prevLeftSecondaryPressed = false;
+
         private float autoScale = 1f;
         private float userScale = 1f;
         private float lastAppliedQuantizedScale = -1f; // last quantized user scale used for point LOD updates
@@ -142,6 +153,76 @@ namespace Playback
             InitializeScaleUi();
             SetScaleUiVisible(false);
             SetInstructionCardsActive(false);
+
+            if (nextAnimButton) nextAnimButton.onClick.AddListener(NextAnimation);
+            if (prevAnimButton) prevAnimButton.onClick.AddListener(PrevAnimation);
+            if (animationControlPanel) animationControlPanel.SetActive(false);
+        }
+
+        private void Update()
+        {
+            // Handle Input for Animation Control (Y Button on Left Controller)
+            if (HasActiveModel() && animationPlayer != null && availableAnimations.Count > 0)
+            {
+                var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+                if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.secondaryButton, out bool secondaryPressed))
+                {
+                    if (secondaryPressed && !prevLeftSecondaryPressed)
+                    {
+                        if (animationPlayer.isPlaying)
+                        {
+                            StopAnimation();
+                        }
+                        else
+                        {
+                            PlayCurrentAnimation();
+                        }
+                    }
+                    prevLeftSecondaryPressed = secondaryPressed;
+                }
+            }
+        }
+
+        public void NextAnimation()
+        {
+            if (availableAnimations.Count == 0) return;
+            currentAnimIndex = (currentAnimIndex + 1) % availableAnimations.Count;
+            PlayCurrentAnimation();
+        }
+
+        public void PrevAnimation()
+        {
+            if (availableAnimations.Count == 0) return;
+            currentAnimIndex--;
+            if (currentAnimIndex < 0) currentAnimIndex = availableAnimations.Count - 1;
+            PlayCurrentAnimation();
+        }
+
+        private void PlayCurrentAnimation()
+        {
+            if (currentAnimIndex >= 0 && currentAnimIndex < availableAnimations.Count && animationPlayer != null)
+            {
+                string animName = availableAnimations[currentAnimIndex];
+                animationPlayer.Stop(); // Stop current
+                animationPlayer.clip = animationPlayer.GetClip(animName);
+                animationPlayer.Play();
+                stateMachine?.SetAction(animName);
+                UpdateAnimationUI();
+            }
+        }
+
+        private void UpdateAnimationUI()
+        {
+            if (animationNameText == null) return;
+            
+            if (availableAnimations.Count > 0 && currentAnimIndex >= 0)
+            {
+                animationNameText.text = availableAnimations[currentAnimIndex];
+            }
+            else
+            {
+                animationNameText.text = "No Animation";
+            }
         }
 
         public void LoadModel(string url, string name = null, string fileId = null)
@@ -484,6 +565,28 @@ namespace Playback
             ScaleModelToUnitCube();
 
             animationPlayer = modelRoot.GetComponentInChildren<Animation>(true);
+
+            // Populate animation list
+            availableAnimations.Clear();
+            currentAnimIndex = -1;
+            if (animationPlayer != null)
+            {
+                foreach (AnimationState state in animationPlayer)
+                {
+                    availableAnimations.Add(state.name);
+                }
+            }
+
+            if (availableAnimations.Count > 0)
+            {
+                currentAnimIndex = 0;
+                if (animationControlPanel) animationControlPanel.SetActive(true);
+            }
+            else
+            {
+                 if (animationControlPanel) animationControlPanel.SetActive(false);
+            }
+            UpdateAnimationUI();
 
             // Apply point-cloud material when the mesh topology is already points
             bool hasPointTopology = HasPointTopologyInChildren(modelRoot);
