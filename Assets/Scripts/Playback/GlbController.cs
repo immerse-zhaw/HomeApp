@@ -49,6 +49,15 @@ namespace Playback
         [SerializeField] private TMP_Text animationNameText;
         [SerializeField] private Button nextAnimButton;
         [SerializeField] private Button prevAnimButton;
+        [SerializeField] private Button playPauseButton;
+        [Tooltip("Image component on the play/pause button")]
+        [SerializeField] private Image playPauseImage;
+        [Tooltip("Play icon (shown when paused / None)")]
+        [SerializeField] private Sprite playSprite;
+        [Tooltip("Pause icon (shown when playing)")]
+        [SerializeField] private Sprite pauseSprite;
+        // Simple paused flag — true when playback is paused (None uses currentAnimIndex == -1)
+        private bool isAnimationPaused = false;
 
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
@@ -156,6 +165,9 @@ namespace Playback
 
             if (nextAnimButton) nextAnimButton.onClick.AddListener(NextAnimation);
             if (prevAnimButton) prevAnimButton.onClick.AddListener(PrevAnimation);
+            if (playPauseButton) playPauseButton.onClick.AddListener(TogglePlayPause);
+            // set a sane default icon in editor if the image & sprite are assigned
+            if (playPauseImage != null && playSprite != null) playPauseImage.sprite = playSprite;
             if (animationControlPanel) animationControlPanel.SetActive(false);
         }
 
@@ -171,7 +183,7 @@ namespace Playback
                     {
                         if (animationPlayer.isPlaying)
                         {
-                            StopAnimation();
+                            PauseAnimation();
                         }
                         else
                         {
@@ -186,38 +198,86 @@ namespace Playback
         public void NextAnimation()
         {
             if (availableAnimations.Count == 0) return;
-            currentAnimIndex = (currentAnimIndex + 1) % availableAnimations.Count;
-            PlayCurrentAnimation();
+
+            // wheel: [None, anim0, anim1, ...]
+            int total = availableAnimations.Count + 1;
+            // map currentAnimIndex (-1..N-1) into virtual (0..N) and advance by one
+            int virtualIndex = (currentAnimIndex + 2) % total; // simpler, no extra adjustments
+            currentAnimIndex = (virtualIndex == 0) ? -1 : virtualIndex - 1;
+
+            // If selection is an animation => play it immediately; if None => stop/reset
+            if (currentAnimIndex >= 0)
+            {
+                PlayCurrentAnimation();
+            }
+            else
+            {
+                StopAnimation();
+            }
         }
 
         public void PrevAnimation()
         {
             if (availableAnimations.Count == 0) return;
-            currentAnimIndex--;
-            if (currentAnimIndex < 0) currentAnimIndex = availableAnimations.Count - 1;
-            PlayCurrentAnimation();
+
+            int total = availableAnimations.Count + 1;
+            int virtualIndex = (currentAnimIndex + 1) - 1;
+            virtualIndex = (virtualIndex % total + total) % total;
+            currentAnimIndex = (virtualIndex == 0) ? -1 : virtualIndex - 1;
+
+            if (currentAnimIndex >= 0)
+            {
+                PlayCurrentAnimation();
+            }
+            else
+            {
+                StopAnimation();
+            }
         }
 
         private void PlayCurrentAnimation()
         {
-            if (currentAnimIndex >= 0 && currentAnimIndex < availableAnimations.Count && animationPlayer != null)
+            if (animationPlayer == null || availableAnimations.Count == 0 || currentAnimIndex < -1) return;
+
+            // default to first animation if coming from None
+            if (currentAnimIndex < 0) currentAnimIndex = 0;
+
+            string animName = availableAnimations[currentAnimIndex];
+            
+            // If already playing/paused on this clip, just ensure it's unpaused and playing
+            if (animationPlayer.clip != null && animationPlayer.clip.name == animName)
             {
-                string animName = availableAnimations[currentAnimIndex];
-                animationPlayer.Stop(); // Stop current
-                animationPlayer.clip = animationPlayer.GetClip(animName);
-                animationPlayer.Play();
-                stateMachine?.SetAction(animName);
-                UpdateAnimationUI();
+                var state = animationPlayer[animName];
+                if (state != null) state.enabled = true;
+                animationPlayer.Play(animName);
             }
+            else
+            {
+                // Only reset/stop if switching to a brand new clip
+                animationPlayer.Stop();
+                animationPlayer.clip = animationPlayer.GetClip(animName);
+                animationPlayer.Play(animName);
+            }
+
+            isAnimationPaused = false;
+            stateMachine?.SetAction(animName);
+            UpdateAnimationUI();
+            UpdatePlayPauseUI(true);
         }
 
         private void UpdateAnimationUI()
         {
             if (animationNameText == null) return;
-            
+
             if (availableAnimations.Count > 0 && currentAnimIndex >= 0)
             {
-                animationNameText.text = availableAnimations[currentAnimIndex];
+                var name = availableAnimations[currentAnimIndex];
+                animationNameText.text = name + (isAnimationPaused ? " (Paused)" : "");
+            }
+            else if (availableAnimations.Count > 0 && currentAnimIndex < 0)
+            {
+                // 'None' state: show a neutral label
+                animationNameText.text = "None";
             }
             else
             {
@@ -280,7 +340,9 @@ namespace Playback
             }
             animationPlayer.clip = animationPlayer.GetClip(animation);
             animationPlayer.Play();
+            isAnimationPaused = false;
             stateMachine?.SetAction(animation);
+            UpdatePlayPauseUI(true);
             Debug.Log($"[GlbController] Playing animation #{animation}.");
         }
 
@@ -300,9 +362,68 @@ namespace Playback
             }
 
             animationPlayer.Stop();
+            // Enter the explicit 'None' selection state so UI and logic remain consistent
+            currentAnimIndex = -1;
+            isAnimationPaused = false;
             stateMachine?.SetAction("none");
-            Debug.Log("[GlbController] Stopped animation.");
+            UpdateAnimationUI();
+            UpdatePlayPauseUI(false);
+            Debug.Log("[GlbController] Stopped animation (reset to first frame / None state).");
         }
+
+        /// <summary>
+        /// Pause playback but preserve the current animation time (do not reset to first frame).
+        /// </summary>
+        private void PauseAnimation()
+        {
+            if (animationPlayer == null || animationPlayer.clip == null) return;
+            
+            // Disable the state to pause exactly at current time
+            var state = animationPlayer[animationPlayer.clip.name];
+            if (state != null) state.enabled = false;
+
+            isAnimationPaused = true;
+            stateMachine?.SetAction(animationPlayer.clip.name);
+            UpdateAnimationUI();
+            UpdatePlayPauseUI(false);
+            Debug.Log("[GlbController] Paused animation.");
+        }
+
+        /// <summary>
+        /// Toggle play/pause from UI button.
+        /// </summary>
+        public void TogglePlayPause()
+        {
+            if (animationPlayer == null || availableAnimations.Count == 0)
+            {
+                // If no animation is loaded but clips exist (edge case), ensure UI shows Play
+                UpdatePlayPauseUI(false);
+                return;
+            }
+
+            if (animationPlayer.isPlaying)
+            {
+                PauseAnimation();
+            }
+            else
+            {
+                PlayCurrentAnimation();
+            }
+        }
+
+        private void UpdatePlayPauseUI(bool isPlaying)
+        {
+            if (playPauseImage == null) return;
+            if (isPlaying)
+            {
+                if (pauseSprite != null) playPauseImage.sprite = pauseSprite;
+            }
+            else
+            {
+                if (playSprite != null) playPauseImage.sprite = playSprite;
+            }
+        }
+
 
         public void SetPointsSize(float size)
         {
@@ -568,7 +689,7 @@ namespace Playback
 
             // Populate animation list
             availableAnimations.Clear();
-            currentAnimIndex = -1;
+            currentAnimIndex = -1; // default to 'None' so model spawns un-animated (first-frame preview)
             if (animationPlayer != null)
             {
                 foreach (AnimationState state in animationPlayer)
@@ -579,14 +700,30 @@ namespace Playback
 
             if (availableAnimations.Count > 0)
             {
-                currentAnimIndex = 0;
+                // Do NOT auto-play: show first-frame preview and expose controls
+                if (animationPlayer != null)
+                {
+                    // set preview clip to the first animation and sample its first frame
+                    animationPlayer.clip = animationPlayer.GetClip(availableAnimations[0]);
+                    if (animationPlayer.clip != null)
+                    {
+                        animationPlayer[animationPlayer.clip.name].time = 0f;
+                        animationPlayer.Sample();
+                    }
+                }
+
+                isAnimationPaused = false;
                 if (animationControlPanel) animationControlPanel.SetActive(true);
+                if (playPauseButton != null) playPauseButton.gameObject.SetActive(true);
             }
             else
             {
-                 if (animationControlPanel) animationControlPanel.SetActive(false);
+                if (animationControlPanel) animationControlPanel.SetActive(false);
+                if (playPauseButton != null) playPauseButton.gameObject.SetActive(false);
             }
+
             UpdateAnimationUI();
+            UpdatePlayPauseUI(false);
 
             // Apply point-cloud material when the mesh topology is already points
             bool hasPointTopology = HasPointTopologyInChildren(modelRoot);

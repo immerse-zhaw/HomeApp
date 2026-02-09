@@ -211,7 +211,7 @@ namespace App
             if (castingText != null)
             {
                 castingText.gameObject.SetActive(isCasting);
-                castingText.text = isCasting ? "Casting: ON" : "Casting: OFF";
+                castingText.text = isCasting ? "Casting" : "Casting: OFF";
             }
         }
     }
