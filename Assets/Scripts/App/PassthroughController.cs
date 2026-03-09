@@ -30,6 +30,9 @@ namespace App
         [Tooltip("Right Controller Visual")]
         [SerializeField] private GameObject rightControllerModel;
 
+        [Header("Startup Settings")]
+        [SerializeField] private bool enablePassthroughOnStart = false;
+
         private bool prevLeftMenuPressed = false;
         private bool passthroughEnabled = false;
         private bool wasEnabledBeforeVideo = false;
@@ -44,17 +47,15 @@ namespace App
 
         private void Awake()
         {
-            passthroughEnabled = arCameraManager != null && arCameraManager.enabled;
             if (passthroughCard == null)
             {
                 var card = GameObject.Find("PassthroughCard");
                 if (card != null) passthroughCard = card;
             }
-            UpdateStatusText();
 
-            // Set controller visuals to match initial passthrough state
-            //if (leftControllerModel != null) leftControllerModel.SetActive(!passthroughEnabled);
-            //if (rightControllerModel != null) rightControllerModel.SetActive(!passthroughEnabled);
+            // Initialize passthrough based on startup setting or ARCameraManager availability
+            bool initialPassthrough = enablePassthroughOnStart || (arCameraManager != null && arCameraManager.enabled);
+            SetPassthrough(initialPassthrough, "startup");
         }
 
         private void UpdateStatusText()
