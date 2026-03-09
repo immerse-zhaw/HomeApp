@@ -3,6 +3,7 @@
   "references": [
     "Unity.TextMeshPro",
     "Unity.XR.Interaction.Toolkit",
+    "Unity.InputSystem",
     "Unity.XR.ARFoundation",
     "endel.nativewebsocket",
     "UnityGLTFScripts",

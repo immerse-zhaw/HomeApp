@@ -11434,6 +11434,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1735879817}
     - target: {fileID: 636552674781235387, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
+      propertyPath: allowTriggerGrab
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 636552674781235387, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: deviceStatusText
       value: 
       objectReference: {fileID: 784837719}
@@ -11623,11 +11627,11 @@ PrefabInstance:
       objectReference: {fileID: 65905029}
     - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: autoHideControlPanel
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: controlPanelOffset.y
-      value: -0.5
+      value: -2.5
       objectReference: {fileID: 0}
     - target: {fileID: 5064892450927187696, guid: ecc8986efafef2f4f9b26d0e0e638768, type: 3}
       propertyPath: controlPanelOffset.z

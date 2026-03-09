@@ -79,16 +79,21 @@ namespace MXR.SDK.Samples {
         private float timeSinceLastSync = 0f;
 
         async void Start() {
-            await MXRManager.InitAsync();
+            try {
+                await MXRManager.InitAsync();
+            } catch (Exception ex) {
+                FileLogger.LogWarning($"[LibraryPanel] MXR initialization failed: {ex.Message}");
+            }
+
+            var mxrSystem = MXRManager.System;
+            var deviceStatus = mxrSystem?.DeviceStatus;
+            var runtimeSettings = mxrSystem?.RuntimeSettingsSummary;
             
             // Log detailed MXR status
             FileLogger.Log("[LibraryPanel] ===== MXR INITIALIZATION STATUS =====");
-            FileLogger.Log($"[LibraryPanel] MXRManager.System: {(MXRManager.System != null ? "OK" : "NULL")}");
+            FileLogger.Log($"[LibraryPanel] MXRManager.System: {(mxrSystem != null ? "OK" : "NULL")}");
             
-            if (MXRManager.System != null) {
-                var deviceStatus = MXRManager.System.DeviceStatus;
-                var runtimeSettings = MXRManager.System.RuntimeSettingsSummary;
-                
+            if (mxrSystem != null) {
                 FileLogger.Log($"[LibraryPanel] Device Serial: {deviceStatus?.serial ?? "NULL"}");
                 FileLogger.Log($"[LibraryPanel] RuntimeSettingsSummary: {(runtimeSettings != null ? "OK" : "NULL")}");
                 
@@ -131,14 +136,25 @@ namespace MXR.SDK.Samples {
             if (webXRButton != null) webXRButton.onClick.AddListener(() => ShowContent(ContentType.WebXR));
             if (syncButton != null) syncButton.onClick.AddListener(TriggerSync);
 
-            OnRuntimeSettingsSummaryChange(MXRManager.System.RuntimeSettingsSummary);
-            OnDeviceStatusChange(MXRManager.System.DeviceStatus);
+            if (runtimeSettings != null)
+                OnRuntimeSettingsSummaryChange(runtimeSettings);
+            if (deviceStatus != null)
+                OnDeviceStatusChange(deviceStatus);
 
-            MXRManager.System.OnRuntimeSettingsSummaryChange += OnRuntimeSettingsSummaryChange;
-            MXRManager.System.OnDeviceStatusChange += OnDeviceStatusChange;
+            if (mxrSystem != null) {
+                mxrSystem.OnRuntimeSettingsSummaryChange += OnRuntimeSettingsSummaryChange;
+                mxrSystem.OnDeviceStatusChange += OnDeviceStatusChange;
+            }
              
-            // Show apps by default
-            ShowContent(ContentType.Apps);
+            // Show apps by default (or videos on non-MXR with server content)
+            if (useServerContent && mxrSystem == null)
+            {
+                ShowContent(ContentType.Videos);
+            }
+            else
+            {
+                ShowContent(ContentType.Apps);
+            }
             
             // Trigger initial sync to check for pending installations
             FileLogger.Log("[LibraryPanel] Triggering initial sync on startup");
@@ -161,8 +177,11 @@ namespace MXR.SDK.Samples {
         }
 
         void OnDestroy() {
-            MXRManager.System.OnRuntimeSettingsSummaryChange -= OnRuntimeSettingsSummaryChange;
-            MXRManager.System.OnDeviceStatusChange -= OnDeviceStatusChange;
+            var mxrSystem = MXRManager.System;
+            if (mxrSystem != null) {
+                mxrSystem.OnRuntimeSettingsSummaryChange -= OnRuntimeSettingsSummaryChange;
+                mxrSystem.OnDeviceStatusChange -= OnDeviceStatusChange;
+            }
             
             if (appsButton != null) appsButton.onClick.RemoveAllListeners();
             if (videosButton != null) videosButton.onClick.RemoveAllListeners();
@@ -234,10 +253,13 @@ namespace MXR.SDK.Samples {
         }
         
         void RefreshExistingCells() {
+            var deviceStatus = MXRManager.System?.DeviceStatus;
+            if (deviceStatus == null) return;
+
             // Update existing app cells with new status instead of recreating
             foreach (var cell in appCells) {
                 if (cell != null && cell.runtimeApp != null) {
-                    cell.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(cell.runtimeApp);
+                    cell.status = deviceStatus.AppInstallStatusForRuntimeApp(cell.runtimeApp);
                     cell.Refresh();
                 }
             }
@@ -245,7 +267,7 @@ namespace MXR.SDK.Samples {
             // Update existing video cells with new status
             foreach (var cell in videoCells) {
                 if (cell != null && cell.video != null) {
-                    cell.status = MXRManager.System.DeviceStatus.FileInstallStatusForVideo(cell.video);
+                    cell.status = deviceStatus.FileInstallStatusForVideo(cell.video);
                     cell.Refresh();
                 }
             }
@@ -300,7 +322,10 @@ namespace MXR.SDK.Samples {
                 return;
             }
 
-            MXRManager.System.RuntimeSettingsSummary.webXRApps.Values.ToList()
+            var runtimeSettings = MXRManager.System?.RuntimeSettingsSummary;
+            if (runtimeSettings == null) return;
+
+            runtimeSettings.webXRApps.Values.ToList()
                 .ForEach(x => {
                     var instance = Instantiate(webXRAppCellTemplate, webXRContainer.transform);
                     instance.gameObject.SetActive(true);
@@ -332,13 +357,18 @@ namespace MXR.SDK.Samples {
                 return;
             }
 
-            MXRManager.System.RuntimeSettingsSummary.videos.Values.ToList()
+            var runtimeSettings = MXRManager.System?.RuntimeSettingsSummary;
+            if (runtimeSettings == null) return;
+
+            var deviceStatus = MXRManager.System?.DeviceStatus;
+
+            runtimeSettings.videos.Values.ToList()
                 .ForEach(x => {
                     var instance = Instantiate(videoCellTemplate, videosContainer.transform);
                     instance.gameObject.SetActive(true);
                     instance.gameObject.name = x.title;
                     instance.video = x;
-                    instance.status = MXRManager.System.DeviceStatus.FileInstallStatusForVideo(x);
+                    instance.status = deviceStatus != null ? deviceStatus.FileInstallStatusForVideo(x) : null;
                     instance.Refresh();
                     videoCells.Add(instance);
                     instance.gameObject.AddComponent<ForwardScrollToParent>();
@@ -410,7 +440,12 @@ namespace MXR.SDK.Samples {
         void InstantiateAppCells() {
             if (appsContainer == null) return;
 
-            var allApps = MXRManager.System.RuntimeSettingsSummary.apps.Values;
+            var runtimeSettings = MXRManager.System?.RuntimeSettingsSummary;
+            if (runtimeSettings == null) return;
+
+            var deviceStatus = MXRManager.System?.DeviceStatus;
+
+            var allApps = runtimeSettings.apps.Values;
             var visibleApps = allApps.Where(app => !IsPackageHidden(app.packageName)).ToList();
 
             if (visibleApps.Count != allApps.Count)
@@ -427,7 +462,7 @@ namespace MXR.SDK.Samples {
                 instance.gameObject.SetActive(true);
                 instance.gameObject.name = x.title;
                 instance.runtimeApp = x;
-                instance.status = MXRManager.System.DeviceStatus?.AppInstallStatusForRuntimeApp(x);
+                instance.status = deviceStatus?.AppInstallStatusForRuntimeApp(x);
                 // Log to help debug
                 bool androidInstalled = MXRAndroidUtils.IsAppInstalled(x.packageName);
                 FileLogger.Log($"[LibraryPanel] App: {x.title} | Package: {x.packageName} | AndroidInstalled: {androidInstalled} | HasStatus: {instance.status != null}");

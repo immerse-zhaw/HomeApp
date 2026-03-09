@@ -21,6 +21,10 @@ namespace Playback
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Material pointsMaterial;
 
+        // MXR panel position restoration
+        private Vector3 mxrPanelInitialPosition;
+        private Quaternion mxrPanelInitialRotation;
+
         [Header("Spawn Settings")]
         [Tooltip("Camera Reference for Spawn")]
         [SerializeField] private Camera spawnCamera;
@@ -169,6 +173,13 @@ namespace Playback
             // set a sane default icon in editor if the image & sprite are assigned
             if (playPauseImage != null && playSprite != null) playPauseImage.sprite = playSprite;
             if (animationControlPanel) animationControlPanel.SetActive(false);
+
+            // Save initial MXR panel position for restoration
+            if (mxrPanel != null)
+            {
+                mxrPanelInitialPosition = mxrPanel.transform.position;
+                mxrPanelInitialRotation = mxrPanel.transform.rotation;
+            }
         }
 
         private void Update()
@@ -322,6 +333,7 @@ namespace Playback
             if (mxrPanel != null)
             {
                 mxrPanel.SetActive(true);
+                RestoreMxrPanelPosition();
             }
             // Set state to Idle when model is closed
             if (stateMachine != null && stateMachine.Current == AppState.ShowingModel)
@@ -1167,6 +1179,13 @@ namespace Playback
             stateMachine = sm;
             videoController = vc;
             Debug.Log($"[GlbController] Injected StateMachine: {stateMachine != null}, VideoController: {videoController != null}");
+        }
+
+        private void RestoreMxrPanelPosition()
+        {
+            if (mxrPanel == null) return;
+            mxrPanel.transform.position = mxrPanelInitialPosition;
+            mxrPanel.transform.rotation = mxrPanelInitialRotation;
         }
 
         // Refresh the point-cloud LOD to match the current transform scale immediately.

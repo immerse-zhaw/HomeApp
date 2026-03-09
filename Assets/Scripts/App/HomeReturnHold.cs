@@ -8,7 +8,7 @@ namespace App
     public class HomeReturnHold : MonoBehaviour
     {
         [Header("Hold Settings")]
-        [SerializeField] private float holdSeconds = 3f;
+        [SerializeField] private float holdSeconds = 2.5f;
         [SerializeField] private bool requireReleaseToRetrigger = true;
 
         [Header("UI")]

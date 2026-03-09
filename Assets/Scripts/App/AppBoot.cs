@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using System.Linq;
 using TMPro;
@@ -30,10 +31,14 @@ namespace App
         [SerializeField] private GameObject castingRoot;
 
         [Header("Device Labeling")]
-        [Tooltip("If enabled, display the device name (from RuntimeSettingsSummary) in the device label when available. Otherwise show the serial number.")]
+        [Tooltip("If enabled, display the MXR device name when available. Otherwise show the serial or fallback device identifier.")]
         [SerializeField] private bool showDeviceNameInUi = false;
         [Tooltip("Text to display when neither device name nor serial are available.")]
         [SerializeField] private string deviceUnknownLabel = "unknown";
+
+        [Header("Input")]
+        [Tooltip("Allow the trigger button to grab/select panel handles and other grabbable objects in addition to grip.")]
+        [SerializeField] private bool allowTriggerGrab = true;
 
         private StateMachine state;
 
@@ -46,62 +51,44 @@ namespace App
                 Debug.LogError("[AppBoot] ProjectSettings asset not assigned.");
                 return;
             }
-            
-            // Request MANAGE_EXTERNAL_STORAGE permission BEFORE initializing MXR SDK
-            // This is critical for Android 11+ (Quest 3) to allow Admin App to download/install apps
-            if (MXRAndroidUtils.NeedsManageExternalStoragePermission)
+
+            UpdateDeviceStatusLabel(null);
+            GrabInputConfigurator.Configure(allowTriggerGrab);
+            TryRequestManageExternalStoragePermission();
+
+            Exception mxrInitException = null;
+            try
             {
-                if (!MXRAndroidUtils.IsExternalStorageManager)
+                await MXRManager.InitAsync();
+            }
+            catch (Exception ex)
+            {
+                mxrInitException = ex;
+            }
+
+            if (MXRManager.System != null)
+            {
+                UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
+                MXRManager.System.OnDeviceStatusChange += UpdateDeviceStatusLabel;
+                MXRManager.System.OnRuntimeSettingsSummaryChange += (_) => UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
+
+                if (MXRManager.System.DeviceStatus != null)
                 {
-                    Debug.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
-                    FileLogger.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
-                    MXRAndroidUtils.RequestManageAppAllFilesAccessPermission();
-                    
-                    // Note: User must grant this permission in Android Settings.
-                    // The app may need to restart after granting the permission.
-                    Debug.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
-                    FileLogger.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
+                    LogDeviceStatus(MXRManager.System.DeviceStatus);
                 }
                 else
                 {
-                    Debug.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
-                    FileLogger.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
+                    LogMxrFallback("MXR device status is not available yet.");
                 }
-            }
-            
-            // Initialize MXR and print serial number
-            await MXRManager.InitAsync();
-            if (MXRManager.System == null)
-            {
-                Debug.LogError("[AppBoot] MXRManager.System not ready.");
-                FileLogger.LogError("[AppBoot] MXRManager.System not ready.");
-                return;
-            }
-
-            UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
-            MXRManager.System.OnDeviceStatusChange += UpdateDeviceStatusLabel;
-            // Also update when runtime settings summary changes (deviceName can arrive here)
-            MXRManager.System.OnRuntimeSettingsSummaryChange += (_) => UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
-
-            if (MXRManager.System.DeviceStatus != null)
-            {
-                string serial = MXRManager.System.DeviceStatus.serial;
-                int appStatusCount = MXRManager.System.DeviceStatus.appStatuses?.Count ?? 0;
-                int videoStatusCount = MXRManager.System.DeviceStatus.videoStatuses?.Count ?? 0;
-                
-                Debug.Log($"[AppBoot] Device Serial: {serial}");
-                Debug.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
-                Debug.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
-                
-                FileLogger.Log($"[AppBoot] Device Serial: {serial}");
-                FileLogger.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
-                FileLogger.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
             }
             else
             {
-                Debug.LogError("[AppBoot] DeviceStatus is NULL - MXR not initialized properly!");
-                FileLogger.LogError("[AppBoot] DeviceStatus is NULL - MXR not initialized properly!");
+                string reason = mxrInitException != null
+                    ? $"MXR initialization failed: {mxrInitException.Message}"
+                    : "MXR system is not ready.";
+                LogMxrFallback(reason);
             }
+
             state = GetComponent<StateMachine>();
 
             wsClient.Init(projectSettings, state);
@@ -160,40 +147,20 @@ namespace App
 
         private void UpdateDeviceStatusLabel(DeviceStatus status)
         {
-            if (status == null)
-            {
-                if (serialText != null) serialText.text = "N/A";
-                if (appsTrackedText != null) appsTrackedText.text = "0";
-                if (videosTrackedText != null) videosTrackedText.text = "0";
-                return;
-            }
-
-            // Device label: either deviceName (from RuntimeSettingsSummary) or serial depending on inspector toggle
             if (serialText != null)
             {
-                string label = deviceUnknownLabel;
-
-                if (showDeviceNameInUi)
-                {
-                    label = MXRManager.System?.RuntimeSettingsSummary?.deviceName ?? status.serial ?? deviceUnknownLabel;
-                }
-                else
-                {
-                    label = status.serial ?? MXRManager.System?.RuntimeSettingsSummary?.deviceName ?? deviceUnknownLabel;
-                }
-
-                serialText.text = label;
+                serialText.text = DeviceIdentity.GetDisplayLabel(showDeviceNameInUi, deviceUnknownLabel);
             }
 
             if (appsTrackedText != null)
             {
-                int appCount = status.appStatuses?.Count ?? 0;
+                int appCount = status?.appStatuses?.Count ?? 0;
                 appsTrackedText.text = appCount.ToString();
             }
 
             if (videosTrackedText != null)
             {
-                int videoCount = status.videoStatuses?.Count ?? 0;
+                int videoCount = status?.videoStatuses?.Count ?? 0;
                 videosTrackedText.text = videoCount.ToString();
             }
 
@@ -213,6 +180,58 @@ namespace App
                 castingText.gameObject.SetActive(isCasting);
                 castingText.text = isCasting ? "Casting" : "Casting: OFF";
             }
+        }
+
+        private void TryRequestManageExternalStoragePermission()
+        {
+            try
+            {
+                if (!MXRAndroidUtils.NeedsManageExternalStoragePermission)
+                {
+                    return;
+                }
+
+                if (!MXRAndroidUtils.IsExternalStorageManager)
+                {
+                    Debug.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
+                    FileLogger.Log("[AppBoot] Requesting MANAGE_EXTERNAL_STORAGE permission...");
+                    MXRAndroidUtils.RequestManageAppAllFilesAccessPermission();
+
+                    Debug.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
+                    FileLogger.LogWarning("[AppBoot] Please grant 'All files access' permission in the system dialog, then restart the app.");
+                    return;
+                }
+
+                Debug.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
+                FileLogger.Log("[AppBoot] MANAGE_EXTERNAL_STORAGE permission already granted.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AppBoot] MXR permission check failed. Continuing without MXR permission flow. {ex.Message}");
+                FileLogger.LogWarning($"[AppBoot] MXR permission check failed. Continuing without MXR permission flow. {ex.Message}");
+            }
+        }
+
+        private void LogDeviceStatus(DeviceStatus status)
+        {
+            string serial = DeviceIdentity.GetMxrSerial() ?? DeviceIdentity.GetStableIdentifier();
+            int appStatusCount = status.appStatuses?.Count ?? 0;
+            int videoStatusCount = status.videoStatuses?.Count ?? 0;
+
+            Debug.Log($"[AppBoot] Device Serial: {serial}");
+            Debug.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
+            Debug.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
+
+            FileLogger.Log($"[AppBoot] Device Serial: {serial}");
+            FileLogger.Log($"[AppBoot] App Statuses Count: {appStatusCount}");
+            FileLogger.Log($"[AppBoot] Video Statuses Count: {videoStatusCount}");
+        }
+
+        private void LogMxrFallback(string reason)
+        {
+            string serial = DeviceIdentity.GetStableIdentifier();
+            Debug.LogWarning($"[AppBoot] {reason} Continuing with fallback device identifier: {serial}");
+            FileLogger.LogWarning($"[AppBoot] {reason} Continuing with fallback device identifier: {serial}");
         }
     }
 }

@@ -39,7 +39,7 @@ namespace Playback
             [SerializeField] private Transform userCameraTransform;
 
             [Tooltip("Offset in camera-local space (x=right, y=up, z=forward).")]
-            [SerializeField] private Vector3 controlPanelOffset = new Vector3(0f, -0.2f, 0.6f);
+            [SerializeField] private Vector3 controlPanelOffset = new Vector3(0f, -0.5f, 0.6f);
 
             [Tooltip("If enabled, the panel will face the camera when shown. Use Rotation Offset to fine-tune orientation.")]
             [SerializeField] private bool faceControlPanelToCamera = true;
@@ -82,6 +82,10 @@ namespace Playback
             private StateMachine stateMachine;
             private GlbController glbController;
 
+            // MXR panel position restoration
+            private Vector3 mxrPanelInitialPosition;
+            private Quaternion mxrPanelInitialRotation;
+
             public void Inject(StateMachine sm, GlbController gc)
             {
                 stateMachine = sm;
@@ -98,6 +102,12 @@ namespace Playback
                 if (playPauseIcon != null && pauseSprite != null)
                 {
                     playPauseIcon.sprite = pauseSprite;
+                }
+                // Save initial MXR panel position for restoration
+                if (mxrPanel != null)
+                {
+                    mxrPanelInitialPosition = mxrPanel.transform.position;
+                    mxrPanelInitialRotation = mxrPanel.transform.rotation;
                 }
             }
 
@@ -434,6 +444,7 @@ namespace Playback
                 if (mxrPanel != null)
                 {
                     mxrPanel.SetActive(true);
+                    RestoreMxrPanelPosition();
                 }
 
                 if (stateMachine != null && stateMachine.Current == AppState.PlayingVideo)
@@ -598,6 +609,13 @@ namespace Playback
                         panelTransform.rotation = Quaternion.LookRotation(toCamera.normalized, camTransform.up) * Quaternion.Euler(controlPanelRotationOffsetEuler);
                     }
                 }
+            }
+
+            private void RestoreMxrPanelPosition()
+            {
+                if (mxrPanel == null) return;
+                mxrPanel.transform.position = mxrPanelInitialPosition;
+                mxrPanel.transform.rotation = mxrPanelInitialRotation;
             }
 
 

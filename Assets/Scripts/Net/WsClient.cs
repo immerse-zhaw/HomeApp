@@ -51,7 +51,7 @@ namespace Net
             ws.OnOpen += () =>
             {
                 SendHello();
-                string serial = MXRManager.System?.DeviceStatus?.serial ?? "unknown";
+                string serial = DeviceIdentity.GetStableIdentifier();
                 Debug.Log($"[WsClient] OPEN | Serial: {serial}");
                 reconnecAttempt = 0;
             };
@@ -96,9 +96,7 @@ namespace Net
             if (heartbeatAccumMs >= settings.PingIntervalMs)
             {
                 heartbeatAccumMs = 0f;
-                // Use the same serial logic as HelloMsg
-                var deviceStatus = MXRManager.System?.DeviceStatus;
-                string serial = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
+                string serial = DeviceIdentity.GetStableIdentifier();
                 string status = GetStatusString();
                 string action = GetActionString();
                 var (contentName, contentFileId) = GetContentInfo(status);
@@ -191,9 +189,10 @@ namespace Net
         {
             var msg = new HelloMsg();
             var deviceStatus = MXRManager.System?.DeviceStatus;
+            string serial = DeviceIdentity.GetStableIdentifier();
 
             // Backend expects the field name androidId; populate it with the MXR serial when available.
-            msg.device.androidId    = deviceStatus?.serial ?? SystemInfo.deviceUniqueIdentifier;
+            msg.device.androidId    = serial;
             msg.device.serial       = msg.device.androidId;
             msg.device.model        = SystemInfo.deviceModel;
             msg.device.systemStatus = deviceStatus?.deviceSystemVersionStatus != null
@@ -205,7 +204,7 @@ namespace Net
             var json = JsonUtility.ToJson(msg);
             
             // Log serial number when sending hello
-            Debug.Log($"[WsClient] Sending Hello | Serial: {msg.device.serial}");
+            Debug.Log($"[WsClient] Sending Hello | Serial: {serial}");
 
             SafeSend(json);
         }
