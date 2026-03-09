@@ -5,11 +5,15 @@ using UnityEngine;
 namespace App
 {
     /// <summary>
-    /// Simple file logger that writes logs to a text file
+    /// Non-blocking file logger. Uses a persistent StreamWriter with AutoFlush=false
+    /// so writes are buffered in memory and flushed on app quit, avoiding main-thread
+    /// I/O stalls from the old File.AppendAllText approach.
     /// </summary>
     public static class FileLogger
     {
         private static string logFilePath;
+        private static StreamWriter writer;
+        private static readonly object lockObj = new object();
         private static bool initialized = false;
 
         public static string LogFilePath => logFilePath;
@@ -17,77 +21,67 @@ namespace App
         private static void Initialize()
         {
             if (initialized) return;
+            initialized = true; // set early to prevent re-entry
 
-            string logDirectory = Application.persistentDataPath;
-            logFilePath = Path.Combine(logDirectory, "app_debug.log");
-            
-            // Create initial log entry
             try
             {
-                string header = $"\n\n===== NEW SESSION: {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====\n";
-                File.AppendAllText(logFilePath, header);
-                Debug.Log($"[FileLogger] Log file created at: {logFilePath}");
+                string logDirectory = Application.persistentDataPath;
+                logFilePath = Path.Combine(logDirectory, "app_debug.log");
+                writer = new StreamWriter(logFilePath, append: true) { AutoFlush = false };
+                writer.WriteLine($"\n===== NEW SESSION: {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
+
+                // Flush & close cleanly when the app exits
+                Application.quitting += Flush;
             }
             catch (Exception e)
             {
-                Debug.LogError($"[FileLogger] Failed to initialize log file: {e.Message}");
+                // Only essential error: log file could not be opened at all
+                Debug.LogError($"[FileLogger] Init failed: {e.Message}");
             }
-
-            initialized = true;
         }
 
         public static void Log(string message)
         {
             Initialize();
-
-            string timestamp = DateTime.Now.ToString("HH:mm:ss");
-            string logEntry = $"[{timestamp}] {message}\n";
-
             try
             {
-                File.AppendAllText(logFilePath, logEntry);
-                Debug.Log(message); // Also log to Unity console
+                lock (lockObj)
+                    writer?.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
             }
-            catch (Exception e)
-            {
-                Debug.LogError($"[FileLogger] Failed to write log: {e.Message}");
-            }
+            catch { /* silent – never spam the console from inside the logger */ }
         }
 
         public static void LogError(string message)
         {
             Initialize();
-
-            string timestamp = DateTime.Now.ToString("HH:mm:ss");
-            string logEntry = $"[{timestamp}] ERROR: {message}\n";
-
             try
             {
-                File.AppendAllText(logFilePath, logEntry);
-                Debug.LogError(message); // Also log to Unity console
+                lock (lockObj)
+                    writer?.WriteLine($"[{DateTime.Now:HH:mm:ss}] ERROR: {message}");
             }
-            catch (Exception e)
-            {
-                Debug.LogError($"[FileLogger] Failed to write error log: {e.Message}");
-            }
+            catch { }
         }
 
         public static void LogWarning(string message)
         {
             Initialize();
-
-            string timestamp = DateTime.Now.ToString("HH:mm:ss");
-            string logEntry = $"[{timestamp}] WARNING: {message}\n";
-
             try
             {
-                File.AppendAllText(logFilePath, logEntry);
-                Debug.LogWarning(message); // Also log to Unity console
+                lock (lockObj)
+                    writer?.WriteLine($"[{DateTime.Now:HH:mm:ss}] WARNING: {message}");
             }
-            catch (Exception e)
+            catch { }
+        }
+
+        /// <summary>Call periodically (e.g. every few seconds) or on quit to commit buffered entries.</summary>
+        public static void Flush()
+        {
+            try
             {
-                Debug.LogError($"[FileLogger] Failed to write warning log: {e.Message}");
+                lock (lockObj)
+                    writer?.Flush();
             }
+            catch { }
         }
 
         public static string GetLogPath()

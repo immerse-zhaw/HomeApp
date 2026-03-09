@@ -182,7 +182,7 @@ namespace Playback
             if (!hasPlanarInput && !hasHeightInput && !hasRightXInput && !hasTriggerInput) return;
 
             // Debug input for troubleshooting (include device validity flags)
-            Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Triggers: L{leftTrigger:0.00}/R{rightTrigger:0.00}");
+            //Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Triggers: L{leftTrigger:0.00}/R{rightTrigger:0.00}");
 
             // Movement direction relative to camera forward/right projected to XZ plane
             Vector3 forward = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized : Vector3.forward;
