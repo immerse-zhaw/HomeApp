@@ -31,18 +31,28 @@ namespace App
         [SerializeField] private GameObject rightControllerModel;
 
         [Header("Startup Settings")]
-        [SerializeField] private bool enablePassthroughOnStart = false;
+        [SerializeField] private bool enablePassthroughOnStart = true;
+        [SerializeField] private float watchdogIntervalSeconds = 0.5f;
 
         private bool prevLeftMenuPressed = false;
         private bool passthroughEnabled = false;
-        private bool wasEnabledBeforeVideo = false;
+        private bool desiredPassthrough = true;
+        private bool wasEnabledBeforeVideo = true;
         private bool lastInVideoMode = false;
+        private float nextWatchdogTime;
 
         private StateMachine stateMachine;
 
         public void Inject(StateMachine sm)
         {
             stateMachine = sm;
+        }
+
+        public void Configure(bool defaultEnabled)
+        {
+            desiredPassthrough = defaultEnabled;
+            enablePassthroughOnStart = defaultEnabled;
+            ApplyStateControlledPassthrough("config");
         }
 
         private void Awake()
@@ -53,9 +63,8 @@ namespace App
                 if (card != null) passthroughCard = card;
             }
 
-            // Initialize passthrough based on startup setting or ARCameraManager availability
-            bool initialPassthrough = enablePassthroughOnStart || (arCameraManager != null && arCameraManager.enabled);
-            SetPassthrough(initialPassthrough, "startup");
+            desiredPassthrough = enablePassthroughOnStart;
+            SetPassthrough(desiredPassthrough, "startup");
         }
 
         private void UpdateStatusText()
@@ -66,31 +75,36 @@ namespace App
 
         private void Update()
         {
-            var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
             bool inVideoMode = stateMachine != null && stateMachine.Current == AppState.PlayingVideo;
 
             if (inVideoMode)
             {
                 if (!lastInVideoMode)
                 {
-                    wasEnabledBeforeVideo = passthroughEnabled || (arCameraManager != null && arCameraManager.enabled);
+                    wasEnabledBeforeVideo = desiredPassthrough;
+                    lastInVideoMode = true;
                 }
-                EnsurePassthroughOffForVideo();
+                EnsurePassthroughOff("video mode");
                 SetPassthroughCardVisible(false);
                 prevLeftMenuPressed = false;
-                lastInVideoMode = true;
                 return;
             }
-            else if (lastInVideoMode)
+
+            if (lastInVideoMode)
             {
-                if (wasEnabledBeforeVideo)
-                {
-                    SetPassthrough(true, "video ended");
-                }
-                SetPassthroughCardVisible(true);
-                wasEnabledBeforeVideo = false;
+                desiredPassthrough = wasEnabledBeforeVideo;
                 lastInVideoMode = false;
+                SetPassthroughCardVisible(true);
+                SetPassthrough(desiredPassthrough, "video ended");
             }
+
+            if (desiredPassthrough && Time.unscaledTime >= nextWatchdogTime)
+            {
+                nextWatchdogTime = Time.unscaledTime + Mathf.Max(0.1f, watchdogIntervalSeconds);
+                EnsurePassthroughOn("watchdog");
+            }
+
+            var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
 
             if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.menuButton, out bool menuPressed))
             {
@@ -103,57 +117,69 @@ namespace App
             }
             else
             {
-                // Still enforce video-mode passthrough OFF even if input isn't available
-                EnsurePassthroughOffForVideo();
+                prevLeftMenuPressed = false;
             }
         }
 
         private void TogglePassthrough()
         {
-            if (stateMachine != null && stateMachine.Current == AppState.PlayingVideo)
-            {
-                EnsurePassthroughOffForVideo();
-                return;
-            }
-            SetPassthrough(!passthroughEnabled, "left menu button");
+            desiredPassthrough = !desiredPassthrough;
+            ApplyStateControlledPassthrough("left menu button");
         }
 
         public void EnablePassthrough(string reason = "external")
         {
-            SetPassthrough(true, reason);
+            desiredPassthrough = true;
+            ApplyStateControlledPassthrough(reason);
         }
 
         public void DisablePassthrough(string reason = "external")
         {
-            SetPassthrough(false, reason);
+            desiredPassthrough = false;
+            ApplyStateControlledPassthrough(reason);
         }
 
-        private void EnsurePassthroughOffForVideo()
+        private void EnsurePassthroughOn(string reason)
         {
-            if (passthroughEnabled || (arCameraManager != null && arCameraManager.enabled))
+            if (!passthroughEnabled)
             {
-                SetPassthrough(false, "video mode");
+                SetPassthrough(true, reason);
             }
-            else
+        }
+
+        private void EnsurePassthroughOff(string reason)
+        {
+            if (passthroughEnabled)
             {
-                if (mainCamera != null && mainCamera.clearFlags != CameraClearFlags.Skybox)
-                {
-                    mainCamera.clearFlags = CameraClearFlags.Skybox;
-                }
+                SetPassthrough(false, reason);
             }
-            UpdateStatusText();
+            else if (mainCamera != null && mainCamera.clearFlags != CameraClearFlags.Skybox)
+            {
+                mainCamera.clearFlags = CameraClearFlags.Skybox;
+            }
+        }
+
+        private void ApplyStateControlledPassthrough(string reason)
+        {
+            bool inVideoMode = stateMachine != null && stateMachine.Current == AppState.PlayingVideo;
+            if (inVideoMode)
+            {
+                EnsurePassthroughOff(reason);
+                return;
+            }
+
+            SetPassthrough(desiredPassthrough, reason);
         }
 
         private void SetPassthrough(bool enable, string reason)
         {
             passthroughEnabled = enable;
 
-            // Directly hide/show controller visuals when passthrough changes
-            //if (leftControllerModel != null) leftControllerModel.SetActive(!enable);
-            //if (rightControllerModel != null) rightControllerModel.SetActive(!enable);
-
-            if (arCameraManager != null) arCameraManager.enabled = enable;
-            if (mainCamera != null) mainCamera.clearFlags = enable ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
+            if (mainCamera != null)
+            {
+                mainCamera.clearFlags = enable ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
+                if (enable) mainCamera.backgroundColor = Color.clear;
+            }
             Debug.Log($"[PassthroughController] Passthrough {(enable ? "ENABLED" : "DISABLED")} ({reason}).");
             UpdateStatusText();
 

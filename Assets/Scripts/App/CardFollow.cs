@@ -65,6 +65,13 @@ public class CardFollow : MonoBehaviour
             lr.material = new Material(Shader.Find("Sprites/Default"));
     }
 
+    void OnDisable()
+    {
+        if (lr == null) lr = GetComponent<LineRenderer>();
+        if (lr != null)
+            lr.enabled = false;
+    }
+
     void LateUpdate()
     {
         // Update camera reference if lost at runtime
@@ -98,4 +105,3 @@ public class CardFollow : MonoBehaviour
         }
     }
 }
-

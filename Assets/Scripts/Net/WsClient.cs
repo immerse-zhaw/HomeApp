@@ -24,8 +24,13 @@ namespace Net
 
         public void Init(ProjectSettings s, StateMachine sm)
         {
+            if (state != null)
+                state.Changed -= SendStatePingNow;
+
             settings = s;
             state = sm;
+            if (state != null)
+                state.Changed += SendStatePingNow;
             Debug.Log("[WsClient] Initialized.");
         }
 
@@ -51,6 +56,7 @@ namespace Net
             ws.OnOpen += () =>
             {
                 SendHello();
+                SendStatePingNow();
                 string serial = DeviceIdentity.GetStableIdentifier();
                 Debug.Log($"[WsClient] OPEN | Serial: {serial}");
                 reconnecAttempt = 0;
@@ -70,7 +76,6 @@ namespace Net
             ws.OnMessage += (data) =>
             {
                 string text = Encoding.UTF8.GetString(data);
-                Debug.Log($"[WsClient] << {text}");
                 OnMessage?.Invoke(text);
             };
 
@@ -96,26 +101,32 @@ namespace Net
             if (heartbeatAccumMs >= settings.PingIntervalMs)
             {
                 heartbeatAccumMs = 0f;
-                string serial = DeviceIdentity.GetStableIdentifier();
-                string status = GetStatusString();
-                string action = GetActionString();
-                var (contentName, contentFileId) = GetContentInfo(status);
-
-                var sb = new System.Text.StringBuilder();
-                sb.Append("{\"type\":\"ping\"");
-                sb.Append($",\"serial\":\"{EscapeJson(serial)}\"");
-                sb.Append($",\"status\":\"{EscapeJson(status)}\"");
-                if (!string.IsNullOrEmpty(action))
-                    sb.Append($",\"action\":\"{EscapeJson(action)}\"");
-                if (!string.IsNullOrEmpty(contentName))
-                    sb.Append($",\"name\":\"{EscapeJson(contentName)}\"");
-                if (!string.IsNullOrEmpty(contentFileId))
-                    sb.Append($",\"fileId\":\"{EscapeJson(contentFileId)}\"");
-                sb.Append("}");
-
-                string pingJson = sb.ToString();
-                SafeSend(pingJson);
+                SendStatePingNow();
             }
+        }
+
+        private void SendStatePingNow()
+        {
+            if (shuttingDown || !IsOpen) return;
+
+            string serial = DeviceIdentity.GetStableIdentifier();
+            string status = GetStatusString();
+            string action = GetActionString();
+            var (contentName, contentFileId) = GetContentInfo(status);
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{\"type\":\"ping\"");
+            sb.Append($",\"serial\":\"{EscapeJson(serial)}\"");
+            sb.Append($",\"status\":\"{EscapeJson(status)}\"");
+            if (!string.IsNullOrEmpty(action))
+                sb.Append($",\"action\":\"{EscapeJson(action)}\"");
+            if (!string.IsNullOrEmpty(contentName))
+                sb.Append($",\"name\":\"{EscapeJson(contentName)}\"");
+            if (!string.IsNullOrEmpty(contentFileId))
+                sb.Append($",\"fileId\":\"{EscapeJson(contentFileId)}\"");
+            sb.Append("}");
+
+            SafeSend(sb.ToString());
         }
 
         private string GetStatusString()
@@ -125,9 +136,9 @@ namespace Net
             {
                 AppState.PlayingVideo => "video",
                 AppState.ShowingModel => "model",
+                AppState.PlayingApp => "app",
                 _ => "home"
             };
-            Debug.Log($"[WsClient] GetStatusString: Current state = {current}, Returning: {statusString}");
             return statusString;
         }
 
@@ -137,8 +148,7 @@ namespace Net
             string action = state.CurrentAction;
             // Treat empty/none or when status is home as no action
             bool isNone = string.IsNullOrWhiteSpace(action) || action == "none";
-            if (isNone || GetStatusString() == "home") return null;
-            Debug.Log($"[WsClient] GetActionString: Current action = {action}");
+            if (isNone || state.Current == AppState.Idle || state.Current == AppState.Loading || state.Current == AppState.Error) return null;
             return action;
         }
 
@@ -163,6 +173,8 @@ namespace Net
         void OnDestroy()
         {
             shuttingDown = true;
+            if (state != null)
+                state.Changed -= SendStatePingNow;
             try
             {
                 ws?.Close();
@@ -213,7 +225,6 @@ namespace Net
         {
             if (shuttingDown || !IsOpen) return;
             _ = ws.SendText(text);
-            Debug.Log($"[WsClient] >> {text}");
         }
 
     }

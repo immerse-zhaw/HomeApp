@@ -17,6 +17,15 @@ namespace App
         [SerializeField] private bool enableVideoControls = true;
         [SerializeField] private bool enableGlbControls = true;
 
+        [Header("Performance")]
+        [SerializeField] private bool verboseLogging = false;
+        [SerializeField] private bool lightweightManageXrInit = true;
+        [SerializeField] private bool defaultPassthroughEnabled = true;
+        [SerializeField, Range(1f, 1.75f)] private float xrRenderScale = 1.1f;
+        [SerializeField, Range(1f, 16f)] private float worldCanvasDynamicPixelsPerUnit = 2f;
+        [SerializeField, Range(1f, 4f)] private float worldCanvasGeometryDensity = 2f;
+        [SerializeField, Min(60)] private int targetFrameRate = 90;
+
         public string WebsocketUrl => websocketUrl;
         public string WebsiteUrl => websiteUrl;
         public int PingIntervalMs => pingIntervalMs;
@@ -24,6 +33,13 @@ namespace App
         public bool EnableAppLauncher => enableAppLauncher;
         public bool EnableVideoControls => enableVideoControls;
         public bool EnableGlbControls => enableGlbControls;
+        public bool VerboseLogging => verboseLogging;
+        public bool LightweightManageXrInit => lightweightManageXrInit;
+        public bool DefaultPassthroughEnabled => defaultPassthroughEnabled;
+        public float XrRenderScale => xrRenderScale;
+        public float WorldCanvasDynamicPixelsPerUnit => worldCanvasDynamicPixelsPerUnit;
+        public float WorldCanvasGeometryDensity => worldCanvasGeometryDensity;
+        public int TargetFrameRate => targetFrameRate;
 
         void OnValidate()
         {

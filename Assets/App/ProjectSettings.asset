@@ -14,8 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   websocketUrl: wss://xr.engineering.zhaw.ch/ws
   websiteUrl: https://xr.engineering.zhaw.ch
-  pingIntervalMs: 1500
+  pingIntervalMs: 5000
   reconnectBackoff: {x: 1, y: 20}
   enableAppLauncher: 1
   enableVideoControls: 1
   enableGlbControls: 1
+  verboseLogging: 0
+  lightweightManageXrInit: 1
+  defaultPassthroughEnabled: 1
+  xrRenderScale: 1.1
+  worldCanvasDynamicPixelsPerUnit: 3
+  worldCanvasGeometryDensity: 1
+  targetFrameRate: 90

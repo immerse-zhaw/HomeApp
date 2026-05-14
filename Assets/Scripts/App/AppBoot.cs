@@ -1,8 +1,14 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
 using TMPro;
 using MXR.SDK;
+using Unity.Collections;
+using UnityEngine.XR;
+using UnityEngine.XR.OpenXR.Features.Meta;
+using UnityEngine.UI;
 
 namespace App
 {
@@ -41,6 +47,7 @@ namespace App
         [SerializeField] private bool allowTriggerGrab = true;
 
         private StateMachine state;
+        private bool subscribedToRuntimeSettings;
 
         async void Awake()
         {
@@ -52,6 +59,8 @@ namespace App
                 return;
             }
 
+            Debug.unityLogger.filterLogType = projectSettings.VerboseLogging ? LogType.Log : LogType.Warning;
+            ApplyRuntimePerformanceSettings();
             UpdateDeviceStatusLabel(null);
             GrabInputConfigurator.Configure(allowTriggerGrab);
             TryRequestManageExternalStoragePermission();
@@ -59,7 +68,21 @@ namespace App
             Exception mxrInitException = null;
             try
             {
-                await MXRManager.InitAsync();
+                if (projectSettings.LightweightManageXrInit)
+                {
+#pragma warning disable 0618
+                    MXRManager.Init();
+#pragma warning restore 0618
+                }
+                else
+                {
+                    await MXRManager.InitAsync();
+                }
+
+                if (MXRManager.System != null)
+                {
+                    MXRManager.System.LoggingEnabled = projectSettings.VerboseLogging;
+                }
             }
             catch (Exception ex)
             {
@@ -70,7 +93,11 @@ namespace App
             {
                 UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
                 MXRManager.System.OnDeviceStatusChange += UpdateDeviceStatusLabel;
-                MXRManager.System.OnRuntimeSettingsSummaryChange += (_) => UpdateDeviceStatusLabel(MXRManager.System.DeviceStatus);
+                if (!projectSettings.LightweightManageXrInit)
+                {
+                    MXRManager.System.OnRuntimeSettingsSummaryChange += OnRuntimeSettingsSummaryChange;
+                    subscribedToRuntimeSettings = true;
+                }
 
                 if (MXRManager.System.DeviceStatus != null)
                 {
@@ -90,7 +117,6 @@ namespace App
             }
 
             state = GetComponent<StateMachine>();
-
             wsClient.Init(projectSettings, state);
 
             if (passthroughController == null)
@@ -116,6 +142,7 @@ namespace App
             if (passthroughController != null)
             {
                 passthroughController.Inject(state);
+                passthroughController.Configure(projectSettings.DefaultPassthroughEnabled);
             }
 
 
@@ -142,7 +169,176 @@ namespace App
             if (MXRManager.System != null)
             {
                 MXRManager.System.OnDeviceStatusChange -= UpdateDeviceStatusLabel;
+                if (subscribedToRuntimeSettings)
+                {
+                    MXRManager.System.OnRuntimeSettingsSummaryChange -= OnRuntimeSettingsSummaryChange;
+                }
             }
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (hasFocus)
+            {
+                ReturnHomeFromExternalAppIfNeeded("focus restored");
+            }
+        }
+
+        private void OnApplicationPause(bool isPaused)
+        {
+            if (!isPaused)
+            {
+                ReturnHomeFromExternalAppIfNeeded("resume");
+            }
+        }
+
+        private void ReturnHomeFromExternalAppIfNeeded(string reason)
+        {
+            if (state == null || state.Current != AppState.PlayingApp)
+                return;
+
+            FileLogger.Log($"[AppBoot] Returned from launched app ({reason}); reporting home.");
+            state.SetState(AppState.Idle);
+            state.SetAction("none");
+            state.ClearContent();
+        }
+
+        private void ApplyRuntimePerformanceSettings()
+        {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = Mathf.Max(60, projectSettings.TargetFrameRate);
+            XRSettings.eyeTextureResolutionScale = Mathf.Clamp(projectSettings.XrRenderScale, 1f, 1.75f);
+            StartCoroutine(RequestXrDisplayRefreshRate());
+
+            float dynamicPixels = Mathf.Clamp(projectSettings.WorldCanvasDynamicPixelsPerUnit, 1f, 16f);
+            float geometryDensity = Mathf.Clamp(projectSettings.WorldCanvasGeometryDensity, 1f, 4f);
+            foreach (var scaler in FindObjectsOfType<CanvasScaler>(true))
+            {
+                var canvas = scaler.GetComponent<Canvas>();
+                if (canvas != null && canvas.renderMode == RenderMode.WorldSpace)
+                {
+                    scaler.dynamicPixelsPerUnit = Mathf.Max(scaler.dynamicPixelsPerUnit, dynamicPixels);
+                    ApplyWorldCanvasGeometryDensity(canvas, geometryDensity);
+                }
+            }
+        }
+
+        private IEnumerator RequestXrDisplayRefreshRate()
+        {
+            int requestedTarget = Mathf.Max(60, projectSettings.TargetFrameRate);
+
+            for (int attempt = 0; attempt < 30; attempt++)
+            {
+                var display = GetLoadedDisplaySubsystem();
+                if (display != null && display.running)
+                {
+                    ApplyXrDisplayRefreshRate(display, requestedTarget);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            FileLogger.LogWarning("[AppBoot] XR display subsystem not ready; could not request display refresh rate.");
+        }
+
+        private void ApplyXrDisplayRefreshRate(XRDisplaySubsystem display, int requestedTarget)
+        {
+            try
+            {
+                float current = 0f;
+                bool hasCurrent = display.TryGetDisplayRefreshRate(out current);
+
+                if (!display.TryGetSupportedDisplayRefreshRates(Allocator.Temp, out var rates))
+                {
+                    FileLogger.LogWarning($"[AppBoot] Could not query supported XR refresh rates. current={(hasCurrent ? current.ToString("0.##") : "unknown")}Hz target={requestedTarget}Hz");
+                    return;
+                }
+
+                using (rates)
+                {
+                    if (!rates.IsCreated || rates.Length == 0)
+                    {
+                        FileLogger.LogWarning("[AppBoot] XR refresh rate list is empty.");
+                        return;
+                    }
+
+                    float selected = rates[0];
+                    for (int i = 0; i < rates.Length; i++)
+                    {
+                        float rate = rates[i];
+                        if (rate <= requestedTarget + 0.1f && rate > selected)
+                            selected = rate;
+                    }
+
+                    var supported = new List<string>(rates.Length);
+                    for (int i = 0; i < rates.Length; i++)
+                        supported.Add(rates[i].ToString("0.##"));
+
+                    bool requestOk = display.TryRequestDisplayRefreshRate(selected);
+                    FileLogger.Log($"[AppBoot] XR refresh request target={requestedTarget}Hz selected={selected:0.##}Hz currentBefore={(hasCurrent ? current.ToString("0.##") : "unknown")}Hz supported=[{string.Join(", ", supported)}] requestOk={requestOk}");
+                    StartCoroutine(LogXrDisplayRefreshRateAfterDelay(display, selected));
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.LogWarning($"[AppBoot] XR refresh rate request failed: {ex.Message}");
+            }
+        }
+
+        private IEnumerator LogXrDisplayRefreshRateAfterDelay(XRDisplaySubsystem display, float requested)
+        {
+            yield return new WaitForSecondsRealtime(1f);
+
+            if (display != null && display.TryGetDisplayRefreshRate(out float current))
+                FileLogger.Log($"[AppBoot] XR refresh after request={current:0.##}Hz requested={requested:0.##}Hz");
+            else
+                FileLogger.LogWarning($"[AppBoot] Could not read XR refresh after requesting {requested:0.##}Hz.");
+        }
+
+        private static XRDisplaySubsystem GetLoadedDisplaySubsystem()
+        {
+            var displays = new List<XRDisplaySubsystem>();
+            SubsystemManager.GetSubsystems(displays);
+            return displays.FirstOrDefault(display => display != null);
+        }
+
+        private static void ApplyWorldCanvasGeometryDensity(Canvas canvas, float density)
+        {
+            if (density <= 1.001f) return;
+
+            var root = canvas.transform as RectTransform;
+            if (root == null || root.childCount == 0) return;
+
+            const string WrapperName = "__CanvasDensityWrapper";
+            if (root.Find(WrapperName) != null) return;
+
+            var wrapperObject = new GameObject(WrapperName, typeof(RectTransform));
+            wrapperObject.hideFlags = HideFlags.HideAndDontSave;
+            var wrapper = (RectTransform)wrapperObject.transform;
+            wrapper.SetParent(root, false);
+            wrapper.anchorMin = Vector2.zero;
+            wrapper.anchorMax = Vector2.one;
+            wrapper.pivot = root.pivot;
+            wrapper.anchoredPosition = Vector2.zero;
+            wrapper.sizeDelta = Vector2.zero;
+
+            int childCount = root.childCount;
+            for (int i = childCount - 1; i >= 0; i--)
+            {
+                var child = root.GetChild(i);
+                if (child == wrapper) continue;
+                child.SetParent(wrapper, false);
+            }
+
+            root.localScale /= density;
+            root.sizeDelta *= density;
+            wrapper.localScale = Vector3.one * density;
+        }
+
+        private void OnRuntimeSettingsSummaryChange(RuntimeSettingsSummary _)
+        {
+            UpdateDeviceStatusLabel(MXRManager.System?.DeviceStatus);
         }
 
         private void UpdateDeviceStatusLabel(DeviceStatus status)

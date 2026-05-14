@@ -2,9 +2,13 @@
   "name": "HomeApp",
   "references": [
     "Unity.TextMeshPro",
+    "Unity.RenderPipelines.Universal.Runtime",
     "Unity.XR.Interaction.Toolkit",
     "Unity.InputSystem",
     "Unity.XR.ARFoundation",
+    "Unity.XR.Management",
+    "Unity.XR.OpenXR",
+    "Unity.XR.MetaOpenXR",
     "endel.nativewebsocket",
     "UnityGLTFScripts",
     "com.mxr.unity.sdk"
