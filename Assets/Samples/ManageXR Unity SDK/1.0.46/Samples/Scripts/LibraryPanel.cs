@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -44,6 +45,11 @@ namespace MXR.SDK.Samples {
         [SerializeField] VideoController videoController;
         [SerializeField] GlbController glbController;
         [SerializeField] bool useServerContent = true;
+        [SerializeField] bool predownloadServerAssets = true;
+        [SerializeField] bool enableManageXrLibrary = true;
+        [SerializeField] bool enableManageXrSync = false;
+        [SerializeField] bool showManageXrApps = true;
+        [SerializeField] Text downloadStatusLabel;
 
         List<WebXRAppCell> webXRAppCells = new List<WebXRAppCell>();
         List<VideoCell> videoCells = new List<VideoCell>();
@@ -71,18 +77,38 @@ namespace MXR.SDK.Samples {
             "com.oculus.vrshell"
         };
 
+        static readonly HashSet<string> HiddenAppTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "OEM Config",
+            "OEMConfig"
+        };
+
         static bool IsPackageHidden(string packageName) {
             return !string.IsNullOrEmpty(packageName) && HiddenPackageNames.Contains(packageName);
         }
 
+        static bool IsAppHidden(RuntimeApp app) {
+            if (app == null) return true;
+            return IsPackageHidden(app.packageName)
+                || (!string.IsNullOrEmpty(app.title) && HiddenAppTitles.Contains(app.title.Trim()));
+        }
+
         private float autoSyncInterval = 30f; // Auto-sync every 30 seconds
         private float timeSinceLastSync = 0f;
+        Coroutine predownloadCoroutine;
+        string lastDownloadStatus;
 
         async void Start() {
-            try {
-                await MXRManager.InitAsync();
-            } catch (Exception ex) {
-                FileLogger.LogWarning($"[LibraryPanel] MXR initialization failed: {ex.Message}");
+            if (downloadStatusLabel != null)
+                downloadStatusLabel.gameObject.SetActive(false);
+
+            if (enableManageXrLibrary)
+            {
+                try {
+                    await MXRManager.InitAsync();
+                } catch (Exception ex) {
+                    FileLogger.LogWarning($"[LibraryPanel] MXR initialization failed: {ex.Message}");
+                }
             }
 
             var mxrSystem = MXRManager.System;
@@ -136,12 +162,12 @@ namespace MXR.SDK.Samples {
             if (webXRButton != null) webXRButton.onClick.AddListener(() => ShowContent(ContentType.WebXR));
             if (syncButton != null) syncButton.onClick.AddListener(TriggerSync);
 
-            if (runtimeSettings != null)
+            if (enableManageXrLibrary && runtimeSettings != null)
                 OnRuntimeSettingsSummaryChange(runtimeSettings);
-            if (deviceStatus != null)
+            if (enableManageXrLibrary && deviceStatus != null)
                 OnDeviceStatusChange(deviceStatus);
 
-            if (mxrSystem != null) {
+            if (enableManageXrLibrary && mxrSystem != null) {
                 mxrSystem.OnRuntimeSettingsSummaryChange += OnRuntimeSettingsSummaryChange;
                 mxrSystem.OnDeviceStatusChange += OnDeviceStatusChange;
             }
@@ -157,8 +183,10 @@ namespace MXR.SDK.Samples {
             }
             
             // Trigger initial sync to check for pending installations
-            FileLogger.Log("[LibraryPanel] Triggering initial sync on startup");
-            TriggerSync();
+            if (enableManageXrSync) {
+                FileLogger.Log("[LibraryPanel] Triggering initial sync on startup");
+                TriggerSync();
+            }
             
             if (useServerContent)
                 StartCoroutine(FetchServerAssets());
@@ -168,6 +196,9 @@ namespace MXR.SDK.Samples {
         
         void Update() {
             // Auto-sync periodically to check for new deployments
+            if (!enableManageXrSync)
+                return;
+
             timeSinceLastSync += Time.deltaTime;
             if (timeSinceLastSync >= autoSyncInterval) {
                 timeSinceLastSync = 0f;
@@ -190,6 +221,11 @@ namespace MXR.SDK.Samples {
         }
 
         public void TriggerSync() {
+            if (!enableManageXrSync) {
+                FileLogger.Log("[LibraryPanel] ManageXR sync disabled.");
+                return;
+            }
+
             FileLogger.Log("[LibraryPanel] Sync button pressed - Triggering ManageXR Admin App sync");
             if (MXRManager.System != null) {
                 bool adminAppInstalled = MXRAndroidUtils.IsAppInstalled("com.mightyimmersion.mightyplatform.adminapp.prod");
@@ -254,11 +290,10 @@ namespace MXR.SDK.Samples {
         
         void RefreshExistingCells() {
             var deviceStatus = MXRManager.System?.DeviceStatus;
-            if (deviceStatus == null) return;
 
             // Update existing app cells with new status instead of recreating
             foreach (var cell in appCells) {
-                if (cell != null && cell.runtimeApp != null) {
+                if (deviceStatus != null && cell != null && cell.runtimeApp != null) {
                     cell.status = deviceStatus.AppInstallStatusForRuntimeApp(cell.runtimeApp);
                     cell.Refresh();
                 }
@@ -266,7 +301,9 @@ namespace MXR.SDK.Samples {
             
             // Update existing video cells with new status
             foreach (var cell in videoCells) {
-                if (cell != null && cell.video != null) {
+                if (cell != null && cell.serverAsset != null) {
+                    cell.Refresh();
+                } else if (deviceStatus != null && cell != null && cell.video != null) {
                     cell.status = deviceStatus.FileInstallStatusForVideo(cell.video);
                     cell.Refresh();
                 }
@@ -297,7 +334,8 @@ namespace MXR.SDK.Samples {
         }
 
         void InstantiateContentCells() {
-            InstantiateAppCells();
+            if (showManageXrApps)
+                InstantiateAppCells();
             InstantiateWebXRCells();
             InstantaiteVideoCells();
         }
@@ -422,7 +460,105 @@ namespace MXR.SDK.Samples {
                 serverAssetsLoaded = true;
                 DestroyContentCells();
                 InstantiateContentCells();
+
+                if (predownloadServerAssets)
+                {
+                    if (predownloadCoroutine != null)
+                        StopCoroutine(predownloadCoroutine);
+                    predownloadCoroutine = StartCoroutine(PredownloadServerAssets(baseUrl));
+                }
             }
+        }
+
+        IEnumerator PredownloadServerAssets(string baseUrl)
+        {
+            int total = serverVideos.Count + serverGlbs.Count;
+            if (total <= 0)
+                yield break;
+
+            int completed = 0;
+            ShowDownloadStatus($"Downloading content 0/{total}");
+
+            foreach (var video in serverVideos)
+            {
+                string path = !string.IsNullOrEmpty(video.universalMp4Url) ? video.universalMp4Url : video.streamUrl;
+                string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, path);
+                yield return EnsureCached("videos", video.id, url, ".mp4", video.originalFilename, ++completed, total);
+            }
+
+            foreach (var glb in serverGlbs)
+            {
+                string path = !string.IsNullOrEmpty(glb.downloadUrl) ? glb.downloadUrl : glb.streamUrl;
+                string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, path);
+                yield return EnsureCached("models", glb.id, url, ".glb", glb.originalFilename, ++completed, total);
+            }
+
+            RefreshExistingCells();
+            ShowDownloadStatus("Downloads complete");
+            yield return new WaitForSecondsRealtime(3f);
+            HideDownloadStatus();
+            predownloadCoroutine = null;
+        }
+
+        IEnumerator EnsureCached(string category, string fileId, string url, string extension, string displayName, int itemIndex, int totalItems)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                yield break;
+
+            string localPath = ContentCache.GetCachedPath(category, fileId, url, extension);
+            if (File.Exists(localPath) && new FileInfo(localPath).Length > 0)
+            {
+                ShowDownloadStatus($"Cached {itemIndex}/{totalItems}: {displayName}");
+                yield break;
+            }
+
+            string tempPath = ContentCache.GetTempPath(localPath);
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+
+            using (var req = UnityWebRequest.Get(url))
+            {
+                req.downloadHandler = new DownloadHandlerFile(tempPath);
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                {
+                    ShowDownloadStatus($"Downloading {itemIndex}/{totalItems}: {(req.downloadProgress * 100f):0}%");
+                    yield return null;
+                }
+
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    FileLogger.LogWarning($"[LibraryPanel] Cache download failed for {displayName}: {req.error}");
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                    yield break;
+                }
+            }
+
+            if (File.Exists(localPath))
+                File.Delete(localPath);
+            File.Move(tempPath, localPath);
+            FileLogger.Log($"[LibraryPanel] Cached {displayName} at {localPath}");
+            RefreshExistingCells();
+        }
+
+        void ShowDownloadStatus(string text)
+        {
+            if (text != lastDownloadStatus)
+            {
+                lastDownloadStatus = text;
+                FileLogger.Log($"[LibraryPanel] {text}");
+            }
+            if (downloadStatusLabel == null)
+                return;
+            downloadStatusLabel.gameObject.SetActive(true);
+            downloadStatusLabel.text = text;
+        }
+
+        void HideDownloadStatus()
+        {
+            if (downloadStatusLabel != null)
+                downloadStatusLabel.gameObject.SetActive(false);
         }
 
         string GetWebsiteUrl()
@@ -446,15 +582,15 @@ namespace MXR.SDK.Samples {
             var deviceStatus = MXRManager.System?.DeviceStatus;
 
             var allApps = runtimeSettings.apps.Values;
-            var visibleApps = allApps.Where(app => !IsPackageHidden(app.packageName)).ToList();
+            var visibleApps = allApps.Where(app => !IsAppHidden(app)).ToList();
 
             if (visibleApps.Count != allApps.Count)
             {
-                var filtered = allApps.Select(app => app.packageName)
-                                      .Where(IsPackageHidden)
+                var filtered = allApps.Where(IsAppHidden)
+                                      .Select(app => $"{app.title} ({app.packageName})")
                                       .Distinct(StringComparer.OrdinalIgnoreCase)
                                       .ToList();
-                FileLogger.Log($"[LibraryPanel] Filtered {filtered.Count} app(s) by package: {string.Join(", ", filtered)}");
+                FileLogger.Log($"[LibraryPanel] Filtered {filtered.Count} app(s): {string.Join(", ", filtered)}");
             }
 
             visibleApps.ForEach(x => {

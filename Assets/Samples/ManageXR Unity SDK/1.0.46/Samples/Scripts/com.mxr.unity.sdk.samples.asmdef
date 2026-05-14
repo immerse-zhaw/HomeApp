@@ -3,6 +3,7 @@
     "references": [
         "GUID:025bdc31ab610724ebbf99d7edf59bb8",
         "GUID:4766656410e7f4d4ba1898ffdf96db5b",
+        "Unity.TextMeshPro",
         "HomeApp"
     ],
     "includePlatforms": [],

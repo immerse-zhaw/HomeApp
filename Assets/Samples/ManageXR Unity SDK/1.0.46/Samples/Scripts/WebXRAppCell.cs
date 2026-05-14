@@ -14,13 +14,22 @@ namespace MXR.SDK.Samples {
         [SerializeField] Sprite defaultIcon;
         [SerializeField] Image internetRequirement;
         [SerializeField] Image controllerRequirement;
+        static readonly System.Collections.Generic.Dictionary<string, Sprite> ThumbnailCache = new System.Collections.Generic.Dictionary<string, Sprite>();
+        Sprite ownedSprite;
+        Texture2D ownedTexture;
 
         [ContextMenu("Refresh")]
         public void Refresh() {
             if (serverAsset != null)
             {
+                string modelPath = !string.IsNullOrEmpty(serverAsset.downloadUrl)
+                    ? serverAsset.downloadUrl
+                    : serverAsset.streamUrl;
+                string modelUrl = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, modelPath);
+                bool isCached = ContentCache.IsCached("models", serverAsset.id, modelUrl, ".glb");
+
                 if (title != null)
-                    title.text = serverAsset.originalFilename;
+                    title.text = serverAsset.originalFilename + (isCached ? " <color=#00ff66>●</color>" : "");
 
                 LoadServerThumbnail();
 
@@ -37,14 +46,17 @@ namespace MXR.SDK.Samples {
 
             new ImageDownloader().Load(MXRStorage.GetFullPath(webXRApp.iconPath), TextureFormat.ARGB32, true,
                 result => {
-                    if (isBeingDestroyed) return;
+                    if (isBeingDestroyed) {
+                        if (result != null) Destroy(result);
+                        return;
+                    }
 
                     if (result == null) {
                         icon.sprite = defaultIcon;
                         return;
                     }
 
-                    icon.sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    SetOwnedSprite(result);
                     icon.preserveAspect = true;
                 },
                 error => icon.sprite = defaultIcon
@@ -82,9 +94,9 @@ namespace MXR.SDK.Samples {
                     return;
                 }
 
-                string path = !string.IsNullOrEmpty(serverAsset.streamUrl)
-                    ? serverAsset.streamUrl
-                    : serverAsset.downloadUrl;
+                string path = !string.IsNullOrEmpty(serverAsset.downloadUrl)
+                    ? serverAsset.downloadUrl
+                    : serverAsset.streamUrl;
 
                 string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, path);
                 glbController.LoadModel(url, serverAsset.originalFilename, serverAsset.id);
@@ -112,25 +124,61 @@ namespace MXR.SDK.Samples {
             }
 
             string url = ServerAssetUtils.BuildAbsoluteUrl(baseUrl, thumbPath);
+            if (ThumbnailCache.TryGetValue(url, out var cachedSprite) && cachedSprite != null)
+            {
+                ReleaseOwnedImage();
+                icon.sprite = cachedSprite;
+                icon.preserveAspect = true;
+                return;
+            }
+
             new ImageDownloader().Load(url, TextureFormat.ARGB32, true,
                 result => {
-                    if (isBeingDestroyed) return;
+                    if (isBeingDestroyed) {
+                        if (result != null) Destroy(result);
+                        return;
+                    }
 
                     if (result == null) {
                         icon.sprite = defaultIcon;
                         return;
                     }
 
-                    icon.sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    result.Apply(false, true);
+                    var sprite = Sprite.Create(result, new Rect(0, 0, result.width, result.height), Vector2.one / 2);
+                    ThumbnailCache[url] = sprite;
+                    ReleaseOwnedImage();
+                    icon.sprite = sprite;
                     icon.preserveAspect = true;
                 },
                 error => icon.sprite = defaultIcon
             );
         }
 
+        void SetOwnedSprite(Texture2D texture)
+        {
+            ReleaseOwnedImage();
+            ownedTexture = texture;
+            ownedSprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), Vector2.one / 2);
+            icon.sprite = ownedSprite;
+        }
+
+        void ReleaseOwnedImage()
+        {
+            if (icon != null && icon.sprite == ownedSprite)
+                icon.sprite = defaultIcon;
+            if (ownedSprite != null)
+                Destroy(ownedSprite);
+            if (ownedTexture != null)
+                Destroy(ownedTexture);
+            ownedSprite = null;
+            ownedTexture = null;
+        }
+
         bool isBeingDestroyed = false;
         void OnDestroy() {
             isBeingDestroyed = true;
+            ReleaseOwnedImage();
         }
     }
 }

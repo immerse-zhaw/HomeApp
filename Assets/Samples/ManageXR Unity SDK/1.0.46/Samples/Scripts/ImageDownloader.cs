@@ -62,21 +62,28 @@ namespace MXR.SDK.Samples {
 
             WebClient client = new WebClient();
             client.DownloadDataCompleted += (sender, args) => {
-                if (args.Error != null) {
-                    onError?.Invoke(new Exception("Could not download image from " + url + " . Error: " + args.Error));
-                    return;
-                }
+                try {
+                    if (args.Error != null) {
+                        onError?.Invoke(new Exception("Could not download image from " + url + " . Error: " + args.Error));
+                        return;
+                    }
 
-                if (args.Result != null && args.Result.Length > 0) {
-                    Texture2D tex = new Texture2D(2, 2, format, mipMap);
-                    tex.LoadImage(args.Result);
-                    if (tex.width == 8 && tex.height == 8)
-                        onError?.Invoke(new Exception("Could not load texture data from image hosted at " + url));
-                    else
-                        onSuccess?.Invoke(tex);
+                    if (args.Result != null && args.Result.Length > 0) {
+                        Texture2D tex = new Texture2D(2, 2, format, mipMap);
+                        tex.LoadImage(args.Result, false);
+                        if (tex.width == 8 && tex.height == 8) {
+                            UnityEngine.Object.Destroy(tex);
+                            onError?.Invoke(new Exception("Could not load texture data from image hosted at " + url));
+                        }
+                        else
+                            onSuccess?.Invoke(tex);
+                    }
+                    else {
+                        onError?.Invoke(new Exception("Could not download image from " + url + " . Error: No data was downloaded."));
+                    }
                 }
-                else {
-                    onError?.Invoke(new Exception("Could not download image from " + url + " . Error: No data was downloaded."));
+                finally {
+                    client.Dispose();
                 }
             };
             client.DownloadDataAsync(new Uri(url));
