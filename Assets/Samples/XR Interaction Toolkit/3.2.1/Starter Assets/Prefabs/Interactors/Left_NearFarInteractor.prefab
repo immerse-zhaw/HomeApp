@@ -116,7 +116,7 @@ MonoBehaviour:
     m_Gradient:
       serializedVersion: 2
       key0: {r: 1, g: 1, b: 1, a: 0}
-      key1: {r: 1, g: 0.78431374, b: 0.5686275, a: 0.49019608}
+      key1: {r: 1, g: 1, b: 1, a: 0.49019608}
       key2: {r: 1, g: 1, b: 1, a: 1}
       key3: {r: 0, g: 0, b: 0, a: 0}
       key4: {r: 0, g: 0, b: 0, a: 0}
@@ -143,7 +143,7 @@ MonoBehaviour:
       m_NumColorKeys: 3
       m_NumAlphaKeys: 4
     m_CustomizeExpandLineDrawPercent: 1
-    m_ExpandModeLineDrawPercent: 0.9
+    m_ExpandModeLineDrawPercent: 0
   m_UIPressHitProperties:
     m_SmoothlyCurveLine: 1
     m_LineBendRatio: 0.5
@@ -233,7 +233,7 @@ MonoBehaviour:
     m_Gradient:
       serializedVersion: 2
       key0: {r: 1, g: 1, b: 1, a: 0}
-      key1: {r: 1, g: 0.78431374, b: 0.5686275, a: 0.49019608}
+      key1: {r: 1, g: 1, b: 1, a: 0.49019608}
       key2: {r: 1, g: 1, b: 1, a: 1}
       key3: {r: 1, g: 1, b: 1, a: 0}
       key4: {r: 0, g: 0, b: 0, a: 0}
@@ -260,7 +260,7 @@ MonoBehaviour:
       m_NumColorKeys: 3
       m_NumAlphaKeys: 4
     m_CustomizeExpandLineDrawPercent: 1
-    m_ExpandModeLineDrawPercent: 0.9
+    m_ExpandModeLineDrawPercent: 0
   m_RenderLineInWorldSpace: 1
   m_SwapMaterials: 0
   m_BaseLineMaterial: {fileID: 0}
@@ -285,7 +285,7 @@ LineRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10306, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: b0e96864bafcfb54894bb238ad56cf3b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
