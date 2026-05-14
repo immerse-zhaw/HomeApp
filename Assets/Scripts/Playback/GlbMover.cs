@@ -16,6 +16,7 @@ namespace Playback
         [SerializeField] private float deadzone = 0.15f;      // thumbstick deadzone
         [SerializeField] private float minHeight = -5f;
         [SerializeField] private float maxHeight = 5f;
+        [SerializeField] private float maxHorizontalDistanceFromUser = 10f;
         [SerializeField] private bool enableEditorControls = true; // allow keyboard fallback for testing in Editor
         [SerializeField] private float rotationSpeed = 90f;   // degrees per second around Y when rotating
         [SerializeField] private float scaleAdjustSpeed = 0.3f; // units per second when nudging scale (0.1x - 10x)
@@ -46,10 +47,13 @@ namespace Playback
 
         private bool wasScalingUp = false;
         private bool wasScalingDown = false;
+        private Transform mainCameraTransform;
 
         void Start()
         {
             glbController = FindObjectOfType<Playback.GlbController>();
+            var cam = Camera.main;
+            mainCameraTransform = cam != null ? cam.transform : null;
             if (glbController == null)
             {
                 Debug.LogWarning("[GlbMover] No GlbController found in scene.");
@@ -107,6 +111,7 @@ namespace Playback
 
             // Editor fallback: safely attempt to read keyboard input. Try the old Input API first in a try/catch,
             // and if it throws (Input System is active), attempt to use the new Input System via reflection.
+#if UNITY_EDITOR
             if (enableEditorControls)
             {
                 if ((!leftValid || leftAxis == Vector2.zero) || !rightValid)
@@ -119,6 +124,7 @@ namespace Playback
                     }
                 }
             }
+#endif
 
             // Triggers (scale)
             float leftTrigger = 0f;
@@ -185,8 +191,14 @@ namespace Playback
             //Debug.Log($"[GlbMover] Input -> Left: {leftAxis} (valid:{leftValid}), RightAxis: {rightAxis} (valid:{rightValid}), Triggers: L{leftTrigger:0.00}/R{rightTrigger:0.00}");
 
             // Movement direction relative to camera forward/right projected to XZ plane
-            Vector3 forward = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized : Vector3.forward;
-            Vector3 rightDir = Camera.main != null ? Vector3.ProjectOnPlane(Camera.main.transform.right, Vector3.up).normalized : Vector3.right;
+            if (mainCameraTransform == null)
+            {
+                var cam = Camera.main;
+                mainCameraTransform = cam != null ? cam.transform : null;
+            }
+
+            Vector3 forward = mainCameraTransform != null ? Vector3.ProjectOnPlane(mainCameraTransform.forward, Vector3.up).normalized : Vector3.forward;
+            Vector3 rightDir = mainCameraTransform != null ? Vector3.ProjectOnPlane(mainCameraTransform.right, Vector3.up).normalized : Vector3.right;
 
             // Compute planar movement (X/Z)
             Vector3 planarDelta = (forward * leftAxis.y + rightDir * leftAxis.x) * moveSpeed * Time.deltaTime;
@@ -202,7 +214,7 @@ namespace Playback
             // Apply position
             Vector3 newPos = root.position + planarDelta;
             newPos.y = newY;
-            root.position = newPos;
+            root.position = ClampToUserDistance(newPos);
 
             // Apply rotation (right stick X) only when horizontal dominates
             if (Mathf.Abs(rightAxis.x) > Mathf.Abs(rightAxis.y))
@@ -240,11 +252,11 @@ namespace Playback
             if (root == null) return;
             if (glbController != null && glbController.TryGetCameraSpawnPosition(out var spawnPos))
             {
-                root.position = spawnPos;
+                root.position = ClampToUserDistance(spawnPos);
             }
             else
             {
-                root.position = initialPosition;
+                root.position = ClampToUserDistance(initialPosition);
             }
             root.rotation = initialRotation;
             root.localScale = initialLocalScale;
@@ -253,6 +265,31 @@ namespace Playback
                 glbController.SetScale(1f);
                 glbController.RefreshLodFromTransform();
             }
+        }
+
+        private Vector3 ClampToUserDistance(Vector3 worldPosition)
+        {
+            if (maxHorizontalDistanceFromUser <= 0f)
+                return worldPosition;
+
+            if (mainCameraTransform == null)
+            {
+                var cam = Camera.main;
+                mainCameraTransform = cam != null ? cam.transform : null;
+            }
+
+            if (mainCameraTransform == null)
+                return worldPosition;
+
+            Vector3 origin = mainCameraTransform.position;
+            Vector3 offset = worldPosition - origin;
+            Vector2 horizontal = new Vector2(offset.x, offset.z);
+            float distance = horizontal.magnitude;
+            if (distance <= maxHorizontalDistanceFromUser || distance <= 0.0001f)
+                return worldPosition;
+
+            Vector2 clamped = horizontal / distance * maxHorizontalDistanceFromUser;
+            return new Vector3(origin.x + clamped.x, worldPosition.y, origin.z + clamped.y);
         }
 
         // Try to get keyboard fallback input in editor. Works with both the old Input API and the new Input System (via reflection).

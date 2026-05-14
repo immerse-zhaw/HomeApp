@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.XR;
 using UnityGLTF;
 using UnityGLTF.Loader;
@@ -11,6 +13,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using App;
+using Launcher;
 
 namespace Playback
 {
@@ -49,6 +52,7 @@ namespace Playback
         [SerializeField] private System.Collections.Generic.List<GameObject> instructionCards = new System.Collections.Generic.List<GameObject>();
 
         [Header("Animation Controls")]
+        [SerializeField] private bool enableAnimationSelector = false;
         [SerializeField] private GameObject animationControlPanel;
         [SerializeField] private TMP_Text animationNameText;
         [SerializeField] private Button nextAnimButton;
@@ -66,6 +70,21 @@ namespace Playback
         [Header("Point Rendering")]
         [SerializeField] private float defaultPointSize = 2.0f;         // Pixel size used by point shader
         [SerializeField] private string pointSizeProperty = "_PointSize"; // Change if your shader uses a different name
+        [SerializeField, Min(10000)] private int maxPointCloudPoints = 75000;
+        [SerializeField] private int[] pointCloudPointLimitsByScale =
+        {
+            300000,
+            450000,
+            600000,
+            800000,
+            1100000,
+            1500000
+        };
+        [SerializeField] private float pointCloudLodResizeSettleSeconds = 0.35f;
+
+        [Header("Point Cloud Quality")]
+        [SerializeField, Range(1, 8)] private int defaultMsaaSamples = 8;
+        [SerializeField, Range(1, 8)] private int pointCloudMsaaSamples = 2;
 
         private static int _pointSizePropId = Shader.PropertyToID("_PointSize");
 
@@ -73,7 +92,7 @@ namespace Playback
         private Animation animationPlayer; // Found on instantiated model, if any
         private List<string> availableAnimations = new List<string>();
         private int currentAnimIndex = -1;
-        private bool prevLeftSecondaryPressed = false;
+        private bool prevLeftPrimaryPressed = false;
 
         private float autoScale = 1f;
         private float userScale = 1f;
@@ -86,6 +105,12 @@ namespace Playback
         private StateMachine stateMachine;
         private Playback.VideoController videoController;
         private bool scaleUiVisible = false;
+        private bool pointCloudQualityActive = false;
+        private int lastPointCloudTargetCount = -1;
+        private Coroutine cleanupCoroutine;
+        private Coroutine pointCloudLodCoroutine;
+        private float pendingPointCloudLodScale = -1f;
+        private bool isDestroying = false;
 
         // Expose model root so other scripts (e.g., GlbMover) can manipulate the loaded model.
         public Transform ModelRoot => modelRoot;
@@ -184,26 +209,28 @@ namespace Playback
 
         private void Update()
         {
-            // Handle Input for Animation Control (Y Button on Left Controller)
-            if (HasActiveModel() && animationPlayer != null && availableAnimations.Count > 0)
+            if (enableAnimationSelector && HasActiveModel() && animationPlayer != null && availableAnimations.Count > 0)
             {
                 var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-                if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.secondaryButton, out bool secondaryPressed))
+                if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryPressed))
                 {
-                    if (secondaryPressed && !prevLeftSecondaryPressed)
+                    if (primaryPressed && !prevLeftPrimaryPressed)
                     {
-                        if (animationPlayer.isPlaying)
-                        {
-                            PauseAnimation();
-                        }
-                        else
-                        {
-                            PlayCurrentAnimation();
-                        }
+                        ToggleAnimationPanelVisibility();
                     }
-                    prevLeftSecondaryPressed = secondaryPressed;
+                    prevLeftPrimaryPressed = primaryPressed;
+                }
+                else
+                {
+                    prevLeftPrimaryPressed = false;
                 }
             }
+        }
+
+        private void ToggleAnimationPanelVisibility()
+        {
+            if (animationControlPanel == null) return;
+            animationControlPanel.SetActive(!animationControlPanel.activeSelf);
         }
 
         public void NextAnimation()
@@ -299,6 +326,7 @@ namespace Playback
         public void LoadModel(string url, string name = null, string fileId = null)
         {
             Debug.Log($"[GlbController] Loading model from URL: {url}");
+            FileLogger.Log($"[Model] Load requested name={name ?? "none"} fileId={fileId ?? "none"} url={ShortUrl(url)}");
             // Ensure video is stopped before loading a model
             videoController?.StopVideo();
             stateMachine?.SetState(AppState.Loading);
@@ -315,14 +343,7 @@ namespace Playback
                 mxrPanel.SetActive(false);
             }
 
-            if (downloadProgress)
-            {
-                StartCoroutine(DownloadThenInstantiate(url));
-            }
-            else
-            {
-                _ = LoadAsync(url, () => Debug.Log("[GlbController] Model is ready."));
-            }
+            StartCoroutine(DownloadThenInstantiate(url));
         }
 
         public void CloseModel()
@@ -456,6 +477,39 @@ namespace Playback
             }
         }
 
+        private void ApplyPointCloudQuality()
+        {
+            SetMsaaSamples(pointCloudMsaaSamples);
+            pointCloudQualityActive = true;
+        }
+
+        private void RestoreDefaultQuality()
+        {
+            if (!pointCloudQualityActive) return;
+
+            SetMsaaSamples(defaultMsaaSamples);
+            pointCloudQualityActive = false;
+        }
+
+        private static void SetMsaaSamples(int samples)
+        {
+            int normalized = NormalizeMsaaSamples(samples);
+            QualitySettings.antiAliasing = normalized;
+
+            if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urpAsset)
+            {
+                urpAsset.msaaSampleCount = normalized;
+            }
+        }
+
+        private static int NormalizeMsaaSamples(int samples)
+        {
+            if (samples >= 8) return 8;
+            if (samples >= 4) return 4;
+            if (samples >= 2) return 2;
+            return 1;
+        }
+
         public void SetScale(float s)
         {
             if (modelRoot == null)
@@ -483,16 +537,10 @@ namespace Playback
             userScale = Mathf.Max(0f, mappedScale);
             ApplyCompositeScale();
 
-            // Use exact combined scale for LOD computation (no high floor) so LOD matches user intent
-            // Quantize userScale so LOD only updates on coarse steps to avoid continuous rebuilds
-            float quantizedUserScale = QuantizeUserScale(userScale);
-            float lodScale = autoScale * quantizedUserScale;
+            float lodScale = autoScale * userScale;
             if (lodScale <= 0f) lodScale = 1e-6f;
-            if (Mathf.Abs(quantizedUserScale - lastAppliedQuantizedScale) > 1e-6f)
-            {
-                ApplyPointCloudLod(lodScale);
-                lastAppliedQuantizedScale = quantizedUserScale;
-            }
+            SchedulePointCloudLod(lodScale);
+            lastAppliedQuantizedScale = QuantizeUserScale(userScale);
 
             // Keep point size simple and stable; downsampling reduces overdraw instead
             if (pointsMaterial != null && pointsMaterial.HasProperty(_pointSizePropId))
@@ -502,8 +550,6 @@ namespace Playback
 
             UpdateScaleUi(clamped);
             SetScaleUiVisible(scaleUiVisible); // respect current toggle but re-check model presence
-
-            Debug.Log($"[GlbController] Set user scale to {clamped} (mapped: {mappedScale}). Combined scale: {autoScale * userScale}");
         }
 
         public void AdjustScale(float delta)
@@ -616,12 +662,22 @@ namespace Playback
 
         private void ClearCurrentModel()
         {
+            bool hadModel = modelRoot != null && modelRoot.childCount > 0;
+            float startedAt = Time.realtimeSinceStartup;
+            RestoreDefaultQuality();
+
             if (currentModel != null)
             {
                 currentModel.Dispose();
                 currentModel = null;
             }
 
+            if (pointCloudLodCoroutine != null)
+            {
+                StopCoroutine(pointCloudLodCoroutine);
+                pointCloudLodCoroutine = null;
+            }
+            pendingPointCloudLodScale = -1f;
             pointCloudMeshes.Clear();
 
             animationPlayer = null;
@@ -641,10 +697,13 @@ namespace Playback
             userScale = 1f;
             currentScaleInput = 1f;
             lastAppliedQuantizedScale = -1f;
+            lastPointCloudTargetCount = -1;
 
             UpdateScaleUi(currentScaleInput);
             SetScaleUiVisible(false);
             SetControlModeCardVisible(false);
+            if (animationControlPanel) animationControlPanel.SetActive(false);
+            if (playPauseButton != null) playPauseButton.gameObject.SetActive(false);
             // Ensure instruction cards are hidden when model is cleared
             SetInstructionCardsActive(false);
 
@@ -653,13 +712,20 @@ namespace Playback
                 downloadProgress.value = 0f;
                 downloadProgress.gameObject.SetActive(false);
             }
+
+            if (hadModel)
+                FileLogger.Log($"[Model] Cleared model elapsed={(Time.realtimeSinceStartup - startedAt):0.00}s");
+
+            if (!isDestroying && hadModel)
+                ScheduleUnusedAssetCleanup();
         }
 
         private async Task LoadAsync(string url, Action onReady)
         {
+            float startedAt = Time.realtimeSinceStartup;
             currentModel?.Dispose();
             // Log the URL being streamed/loaded so we can identify the source file
-            Debug.Log($"[GlbController] Streaming/Loading model from URL: {url}");
+            FileLogger.Log($"[Model] Import begin source={url}");
             var uriDir = url.Substring(0, url.LastIndexOf('/') + 1);
             var fileName = Path.GetFileName(url);
             var importOpt = new ImportOptions
@@ -678,6 +744,7 @@ namespace Playback
             Debug.Log("[GlbController] Model loaded successfully.");
             loaded.transform.SetParent(modelRoot, false);
             FinalizeLoadedModel();
+            FileLogger.Log($"[Model] Import complete elapsed={(Time.realtimeSinceStartup - startedAt):0.00}s childCount={(modelRoot != null ? modelRoot.childCount : 0)} pointMeshes={pointCloudMeshes.Count}");
 
             onReady?.Invoke();
         }
@@ -725,8 +792,8 @@ namespace Playback
                 }
 
                 isAnimationPaused = false;
-                if (animationControlPanel) animationControlPanel.SetActive(true);
-                if (playPauseButton != null) playPauseButton.gameObject.SetActive(true);
+                if (animationControlPanel) animationControlPanel.SetActive(false);
+                if (playPauseButton != null) playPauseButton.gameObject.SetActive(enableAnimationSelector);
             }
             else
             {
@@ -745,6 +812,7 @@ namespace Playback
 
             if (hasPointTopology)
             {
+                ApplyPointCloudQuality();
                 CachePointCloudMeshes();
                 float initialQuant = QuantizeUserScale(userScale);
                 ApplyPointCloudLod(autoScale * initialQuant);
@@ -754,6 +822,7 @@ namespace Playback
             }
             else
             {
+                RestoreDefaultQuality();
                 SetupGlbPipeline(modelRoot);
             }
 
@@ -853,6 +922,7 @@ namespace Playback
         private void CachePointCloudMeshes()
         {
             pointCloudMeshes.Clear();
+            lastPointCloudTargetCount = -1;
             foreach (var mr in modelRoot.GetComponentsInChildren<MeshRenderer>(true))
             {
                 var mf = mr.GetComponent<MeshFilter>();
@@ -860,12 +930,9 @@ namespace Playback
                 var mesh = mf.sharedMesh;
                 if (mesh.GetTopology(0) != MeshTopology.Points) continue;
 
-                // Make a copy so we never mutate the imported mesh asset
-                var originalCopy = Instantiate(mesh);
-                originalCopy.name = mesh.name + "_OriginalCopy";
-
                 var working = new Mesh();
                 working.name = mesh.name + "_WorkingLod";
+                working.MarkDynamic();
 
                 mf.sharedMesh = working;
 
@@ -873,7 +940,7 @@ namespace Playback
                 {
                     Filter = mf,
                     Renderer = mr,
-                    OriginalMesh = originalCopy,
+                    OriginalMesh = mesh,
                     WorkingMesh = working
                 });
             }
@@ -884,6 +951,7 @@ namespace Playback
                 if (pc.OriginalMesh != null && pc.OriginalMesh.vertexCount > 0)
                     totalPoints += pc.OriginalMesh.vertexCount;
             Debug.Log($"[GlbController] Loaded point cloud(s) with {totalPoints} points");
+            FileLogger.Log($"[Model] Point cloud meshes={pointCloudMeshes.Count} originalPoints={totalPoints} limits=[{string.Join(",", pointCloudPointLimitsByScale)}]");
         }
 
         private void ApplyPointCloudLod(float totalScale)
@@ -898,6 +966,10 @@ namespace Playback
             if (totalOriginal == 0) return;
 
             int globalTarget = ComputeTargetPointCount(totalOriginal, totalScale);
+            if (globalTarget == lastPointCloudTargetCount)
+                return;
+
+            lastPointCloudTargetCount = globalTarget;
 
             // Allocate per-mesh targets proportionally, then adjust to match globalTarget exactly
             var perMeshTargets = new int[pointCloudMeshes.Count];
@@ -935,6 +1007,8 @@ namespace Playback
                 var src = pc.OriginalMesh;
                 var dst = pc.WorkingMesh;
                 if (src == null || dst == null) continue;
+                if (pc.Filter != null && pc.Filter.sharedMesh != dst)
+                    pc.Filter.sharedMesh = dst;
 
                 var verts = src.vertices;
                 if (verts == null || verts.Length == 0) continue;
@@ -973,44 +1047,51 @@ namespace Playback
             }
 
             Debug.Log($"[GlbController] Current point cloud LOD: {totalNewPoints} points");
+            FileLogger.Log($"[Model] Point LOD target={totalNewPoints}/{totalOriginal} scale={userScale:0.##} mode=sampled");
+        }
+
+        private void SchedulePointCloudLod(float lodScale)
+        {
+            if (pointCloudMeshes.Count == 0) return;
+
+            pendingPointCloudLodScale = lodScale;
+
+            if (pointCloudLodCoroutine != null)
+                StopCoroutine(pointCloudLodCoroutine);
+
+            pointCloudLodCoroutine = StartCoroutine(ApplyPointCloudLodAfterResizeSettles());
+        }
+
+        private IEnumerator ApplyPointCloudLodAfterResizeSettles()
+        {
+            yield return new WaitForSecondsRealtime(pointCloudLodResizeSettleSeconds);
+
+            float lodScale = pendingPointCloudLodScale;
+            pointCloudLodCoroutine = null;
+            pendingPointCloudLodScale = -1f;
+            ApplyPointCloudLod(lodScale);
         }
 
         private int ComputeTargetPointCount(int originalCount, float totalScale)
         {
-            // Map userScale to a target point count with these rules:
-            // - <=0.5x -> 50k (do not reduce further)
-            // - 1x -> 100k
-            // - 5x -> full originalCount
-            // Interpolate smoothly between these breakpoints.
             float us = Mathf.Max(userScale, 0.001f);
 
             if (originalCount <= 0) return 0;
 
-            int target;
-            if (us <= 0.5f)
-            {
-                target = 50000;
-            }
-            else if (us <= 1f)
-            {
-                // Interpolate from 50k at 0.5x to 100k at 1x
-                float t = (us - 0.5f) / 0.5f;
-                target = Mathf.RoundToInt(Mathf.Lerp(50000f, 100000f, t));
-            }
-            else if (us <= 5f)
-            {
-                // Interpolate from 100k at 1x to full at 5x
-                float t = (us - 1f) / 4f;
-                target = Mathf.RoundToInt(Mathf.Lerp(100000f, (float)originalCount, t));
-            }
-            else
-            {
-                // At and above 5x: use full original count
-                target = originalCount;
-            }
+            int target = GetPointCloudLimitForScale(us);
 
             // Never exceed original count
             return Mathf.Clamp(target, 0, originalCount);
+        }
+
+        private int GetPointCloudLimitForScale(float scale)
+        {
+            if (pointCloudPointLimitsByScale == null || pointCloudPointLimitsByScale.Length == 0)
+                return maxPointCloudPoints;
+
+            int index = Mathf.Clamp(Mathf.FloorToInt(scale + 0.0001f) - 1, 0, pointCloudPointLimitsByScale.Length - 1);
+            int configured = pointCloudPointLimitsByScale[index];
+            return Mathf.Max(10000, configured);
         }
 
         // Quantize userScale for LOD updates to reduce frequency of heavy point-cloud rebuilds:
@@ -1101,53 +1182,52 @@ namespace Playback
         // Handle GET. Show network download progress, then load bytes via GLTFast
         private IEnumerator DownloadThenInstantiate(string url)
         {
+            float totalStartedAt = Time.realtimeSinceStartup;
             if (downloadProgress)
             {
                 downloadProgress.gameObject.SetActive(true);
                 downloadProgress.value = 0f;
             }
 
-            // Log the URL being downloaded/streamed so we can inspect the source
-            Debug.Log($"[GlbController] Downloading model from URL: {url}");
-            using (var uwr = UnityWebRequest.Get(url))
+            string localPath = ContentCache.GetCachedPath("models", stateMachine?.CurrentContentFileId, url, ".glb");
+            if (!File.Exists(localPath) || new FileInfo(localPath).Length <= 0)
             {
-                uwr.SendWebRequest();
-                while (!uwr.isDone)
+                string tempPath = ContentCache.GetTempPath(localPath);
+                float downloadStartedAt = Time.realtimeSinceStartup;
+                FileLogger.Log($"[Model] Cache miss; downloading url={ShortUrl(url)}");
+                using (var uwr = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET))
                 {
-                    if (downloadProgress) downloadProgress.value = uwr.downloadProgress;
-                    yield return null;
-                }
-
-                if (uwr.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError($"[GlbController] Download error: {uwr.error}");
-                    if (downloadProgress)
+                    uwr.downloadHandler = new DownloadHandlerFile(tempPath);
+                    uwr.SendWebRequest();
+                    while (!uwr.isDone)
                     {
-                        downloadProgress.value = 0f;
-                        downloadProgress.gameObject.SetActive(false);
+                        if (downloadProgress) downloadProgress.value = uwr.downloadProgress;
+                        yield return null;
                     }
-                    yield break;
+
+                    if (uwr.result != UnityWebRequest.Result.Success)
+                    {
+                        FileLogger.LogWarning($"[Model] Download failed error={uwr.error} url={ShortUrl(url)}");
+                        if (downloadProgress)
+                        {
+                            downloadProgress.value = 0f;
+                            downloadProgress.gameObject.SetActive(false);
+                        }
+                        yield break;
+                    }
                 }
 
-                var data = uwr.downloadHandler.data;
-                currentModel?.Dispose();
-                var importOpt = new ImportOptions();
-                var stream = new MemoryStream(data);
-                currentModel = new GLTFSceneImporter(stream, importOpt);
-                var loadTask = currentModel.LoadSceneAsync();
-                while (!loadTask.IsCompleted) yield return null;
-                stream.Dispose();
-                var loaded = currentModel.LastLoadedScene;
-                if (loaded == null)
-                {
-                    Debug.LogError("[GlbController] Failed to parse GLB.");
-                    currentModel?.Dispose();
-                    yield break;
-                }
-
-                loaded.transform.SetParent(modelRoot, false);
-                FinalizeLoadedModel();
+                if (File.Exists(localPath)) File.Delete(localPath);
+                File.Move(tempPath, localPath);
+                FileLogger.Log($"[Model] Download complete path={localPath} size={GetFileSizeLabel(localPath)} elapsed={(Time.realtimeSinceStartup - downloadStartedAt):0.00}s");
             }
+            else
+            {
+                FileLogger.Log($"[Model] Cache hit path={localPath} size={GetFileSizeLabel(localPath)}");
+            }
+
+            var loadTask = LoadAsync("file://" + localPath.Replace("\\", "/"), () => Debug.Log("[GlbController] Model is ready."));
+            while (!loadTask.IsCompleted) yield return null;
 
             if (downloadProgress)
             {
@@ -1155,11 +1235,16 @@ namespace Playback
                 downloadProgress.gameObject.SetActive(false);
             }
 
-            Debug.Log("[GlbController] Model download complete. Model is ready.");
+            FileLogger.Log($"[Model] Load flow complete elapsed={(Time.realtimeSinceStartup - totalStartedAt):0.00}s");
         }
 
         private void OnDestroy()
         {
+            isDestroying = true;
+            if (cleanupCoroutine != null)
+                StopCoroutine(cleanupCoroutine);
+            ClearCurrentModel();
+
             if (scaleSlider != null)
             {
                 scaleSlider.onValueChanged.RemoveListener(OnScaleSliderChanged);
@@ -1172,6 +1257,43 @@ namespace Playback
 
             // Hide instruction cards
             SetInstructionCardsActive(false);
+        }
+
+        private void ScheduleUnusedAssetCleanup()
+        {
+            if (cleanupCoroutine != null)
+                StopCoroutine(cleanupCoroutine);
+            cleanupCoroutine = StartCoroutine(UnloadUnusedAssetsSoon());
+        }
+
+        private IEnumerator UnloadUnusedAssetsSoon()
+        {
+            float startedAt = Time.realtimeSinceStartup;
+            FileLogger.Log("[Model] UnloadUnusedAssets begin");
+            yield return null;
+            yield return Resources.UnloadUnusedAssets();
+            GC.Collect();
+            FileLogger.Log($"[Model] UnloadUnusedAssets complete elapsed={(Time.realtimeSinceStartup - startedAt):0.00}s");
+            cleanupCoroutine = null;
+        }
+
+        private static string ShortUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return "none";
+            return url.Length <= 96 ? url : url.Substring(0, 93) + "...";
+        }
+
+        private static string GetFileSizeLabel(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return "missing";
+                return $"{new FileInfo(path).Length / (1024f * 1024f):0.0}MB";
+            }
+            catch
+            {
+                return "unknown";
+            }
         }
 
         public void Inject(StateMachine sm, Playback.VideoController vc)
@@ -1196,18 +1318,24 @@ namespace Playback
             float compositeScale = modelRoot.localScale.x; // assume uniform scale is used
             if (autoScale <= 0f) autoScale = 1e-6f;
             float computedUserScale = compositeScale / autoScale;
-            // Quantize according to rules and force-apply LOD
-            float quant = QuantizeUserScale(computedUserScale);
-            float lodScale = autoScale * quant;
+            float clampedUserScale = Mathf.Clamp(computedUserScale, minScale, maxScale);
+            float quant = QuantizeUserScale(clampedUserScale);
+            float lodScale = autoScale * clampedUserScale;
+            if (pointCloudLodCoroutine != null)
+            {
+                StopCoroutine(pointCloudLodCoroutine);
+                pointCloudLodCoroutine = null;
+                pendingPointCloudLodScale = -1f;
+            }
             ApplyPointCloudLod(lodScale);
             lastAppliedQuantizedScale = quant;
 
             // Update internal userScale and slider UI to reflect new value
-            userScale = quant;
-            currentScaleInput = Mathf.Clamp(quant, minScale, maxScale);
+            userScale = clampedUserScale;
+            currentScaleInput = clampedUserScale;
             UpdateScaleUi(currentScaleInput);
 
-            Debug.Log($"[GlbController] RefreshLodFromTransform -> composite:{compositeScale} computedUser:{computedUserScale} quant:{quant}");
+            Debug.Log($"[GlbController] RefreshLodFromTransform -> composite:{compositeScale} computedUser:{computedUserScale} appliedUser:{clampedUserScale} quant:{quant}");
         }
     }
 }

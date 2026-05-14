@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.Video;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.XR;
 using UnityEngine.UI;
 using TMPro;
@@ -8,6 +10,7 @@ using System.Collections;
 using System.IO;
 using UnityEngine.Networking;
 using App;
+using Launcher;
 
 namespace Playback
 {
@@ -50,6 +53,12 @@ namespace Playback
             [Header("Video Playback Mode")]
             [Tooltip("When enabled, the video is downloaded to persistent storage first and played from disk (reliable on slow/remote networks). When disabled, the URL is streamed directly (lower latency on a good LAN).")]
             [SerializeField] private bool useVideoCache = true;
+            [Tooltip("Yaw correction for 360/180 skybox videos. Use this when the encoded forward direction is offset.")]
+            [SerializeField] private float skyboxYawOffsetDegrees = 90f;
+            [Tooltip("MSAA while video is playing. Skybox video does not benefit much from 8x MSAA, and lower values reduce decode/render pressure.")]
+            [SerializeField, Range(1, 8)] private int videoMsaaSamples = 1;
+            [Tooltip("MSAA restored after video closes.")]
+            [SerializeField, Range(1, 8)] private int defaultMsaaSamples = 8;
 
             [Header("Control Panel Auto-Hide")]
             [SerializeField] private bool autoHideControlPanel = true;
@@ -66,9 +75,6 @@ namespace Playback
             private int lastDisplayedSecond = -1;   // avoids string alloc every frame
             private int lastDownloadPct = -1;        // avoids string alloc every frame during download
 
-            // Video cache directory inside persistentDataPath
-            private static readonly string CacheFolder = "VideoCache";
-
             // Pending metadata stored while download is in progress
             private string pendingName;
             private string pendingFileId;
@@ -81,6 +87,12 @@ namespace Playback
             // Injected references
             private StateMachine stateMachine;
             private GlbController glbController;
+            private bool videoQualityActive = false;
+            private RenderTexture videoTargetTexture;
+            private Coroutine cleanupCoroutine;
+            private float playbackRequestStartedAt;
+            private string playbackSourceLabel = "none";
+            private bool pendingAutoPlay = true;
 
             // MXR panel position restoration
             private Vector3 mxrPanelInitialPosition;
@@ -95,6 +107,7 @@ namespace Playback
             public void Awake()
             {
                 RenderSettings.skybox = skyboxDefault; 
+                videoTargetTexture = videoPlayer != null ? videoPlayer.targetTexture : null;
                 SetupUI();
                 SetControlPanelVisibility(false);
                 Debug.Log($"[VideoController] PersistentDataPath: {Application.persistentDataPath}");
@@ -109,6 +122,14 @@ namespace Playback
                     mxrPanelInitialPosition = mxrPanel.transform.position;
                     mxrPanelInitialRotation = mxrPanel.transform.rotation;
                 }
+            }
+
+            private void OnDestroy()
+            {
+                if (cleanupCoroutine != null)
+                    StopCoroutine(cleanupCoroutine);
+                ResetCurrentVideoSurface(true);
+                RestoreDefaultQuality();
             }
 
             private void SetupUI()
@@ -139,8 +160,8 @@ namespace Playback
                     UpdateTimeText();
                 }
 
-                // XR input polling is only needed while a video is actively playing
-                if (!isPlaying || controlPanel == null) return;
+                // Keep controls reachable while paused; a prepared video is still the active video session.
+                if (!HasActiveVideoSession()) return;
 
                 var leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
                 if (leftHand.isValid && leftHand.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryPressed))
@@ -152,6 +173,11 @@ namespace Playback
                     }
                     prevLeftPrimaryPressed = primaryPressed;
                 }
+            }
+
+            private bool HasActiveVideoSession()
+            {
+                return controlPanel != null && videoPlayer != null && videoPlayer.isPrepared;
             }
 
             private void UpdateTimeText()
@@ -173,8 +199,11 @@ namespace Playback
                 return $"{minutes}:{seconds:00}";
             }
 
-            public void PlayVideo(string url, string name = null, string fileId = null)
+            public void PlayVideo(string url, string name = null, string fileId = null, bool autoPlay = true)
             {
+                FileLogger.Log($"[Video] Play requested name={name ?? "none"} fileId={fileId ?? "none"} url={ShortUrl(url)}");
+                ResetCurrentVideoSurface(true);
+
                 // Cancel any in-progress download from a previous request
                 if (downloadCoroutine != null)
                 {
@@ -202,13 +231,11 @@ namespace Playback
                 if (mxrPanel != null)
                     mxrPanel.SetActive(false);
 
-                ApplyProjectionSettings();
-
                 if (!useVideoCache)
                 {
                     // ── Stream mode: play directly from the URL ──────────────────────
                     Debug.Log($"[VideoController] Stream mode – playing URL directly: {url}");
-                    StartPlaybackFromUrl(url, name, fileId);
+                    StartPlaybackFromUrl(url, name, fileId, autoPlay);
                     return;
                 }
 
@@ -217,14 +244,14 @@ namespace Playback
                 string localPath = GetCachedPath(fileId, url);
                 if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
                 {
-                    Debug.Log($"[VideoController] Cache hit – playing from local file: {localPath}");
-                    StartPlaybackFromLocal(localPath, name, fileId);
+                    FileLogger.Log($"[Video] Cache hit path={localPath} size={GetFileSizeLabel(localPath)}");
+                    StartPlaybackFromLocal(localPath, name, fileId, autoPlay);
                     return;
                 }
 
                 // File not cached — download first, then play
-                Debug.Log($"[VideoController] Cache miss – downloading: {url}");
-                downloadCoroutine = StartCoroutine(DownloadAndPlay(url, name, fileId));
+                FileLogger.Log($"[Video] Cache miss; downloading url={ShortUrl(url)}");
+                downloadCoroutine = StartCoroutine(DownloadAndPlay(url, name, fileId, autoPlay));
             }
 
             /// <summary>
@@ -233,36 +260,18 @@ namespace Playback
             /// </summary>
             private string GetCachedPath(string fileId, string url)
             {
-                string cacheDir = Path.Combine(Application.persistentDataPath, CacheFolder);
-                if (!string.IsNullOrEmpty(fileId))
-                {
-                    // Try to preserve the original extension from the URL
-                    string ext = Path.GetExtension(new Uri(url).LocalPath);
-                    if (string.IsNullOrEmpty(ext)) ext = ".mp4";
-                    return Path.Combine(cacheDir, fileId + ext);
-                }
-                return null; // no stable key – cannot cache
+                return ContentCache.GetCachedPath("videos", fileId, url, ".mp4");
             }
 
-            private IEnumerator DownloadAndPlay(string url, string name, string fileId)
+            private IEnumerator DownloadAndPlay(string url, string name, string fileId, bool autoPlay)
             {
                 // Show control panel in "loading" state so the user sees feedback
+                float startedAt = Time.realtimeSinceStartup;
                 if (timeText != null) timeText.text = "Downloading... 0%";
                 SetControlPanelVisibility(true);
 
-                string cacheDir = Path.Combine(Application.persistentDataPath, CacheFolder);
-                Directory.CreateDirectory(cacheDir);
-
                 string localPath = GetCachedPath(fileId, url);
-                // If no stable key, use a temp filename derived from url hash
-                if (localPath == null)
-                {
-                    string ext = Path.GetExtension(new Uri(url).LocalPath);
-                    if (string.IsNullOrEmpty(ext)) ext = ".mp4";
-                    localPath = Path.Combine(cacheDir, "tmp_" + Mathf.Abs(url.GetHashCode()) + ext);
-                }
-
-                string tempPath = localPath + ".part";
+                string tempPath = ContentCache.GetTempPath(localPath);
 
                 using (var uwr = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET))
                 {
@@ -298,31 +307,43 @@ namespace Playback
                 if (File.Exists(localPath)) File.Delete(localPath);
                 File.Move(tempPath, localPath);
 
-                Debug.Log($"[VideoController] Download complete: {localPath}");
+                FileLogger.Log($"[Video] Download complete path={localPath} size={GetFileSizeLabel(localPath)} elapsed={(Time.realtimeSinceStartup - startedAt):0.00}s");
                 downloadCoroutine = null;
 
-                StartPlaybackFromLocal(localPath, name, fileId);
+                StartPlaybackFromLocal(localPath, name, fileId, autoPlay);
             }
 
-            private void StartPlaybackFromUrl(string url, string name, string fileId)
+            private void StartPlaybackFromUrl(string url, string name, string fileId, bool autoPlay)
             {
+                ApplyVideoQuality();
+                ResetCurrentVideoSurface(false);
+                PrepareVideoPlayerForPlayback();
+                playbackRequestStartedAt = Time.realtimeSinceStartup;
+                playbackSourceLabel = "stream";
+                pendingAutoPlay = autoPlay;
                 lastDisplayedSecond = -1;
                 videoPlayer.skipOnDrop = true;   // drop frames instead of stalling when decoder falls behind
                 videoPlayer.url = url;
                 videoPlayer.prepareCompleted += OnVideoPrepared;
                 videoPlayer.Prepare();
 
-                isPlaying = true;
+                isPlaying = autoPlay;
                 UpdatePlayPauseIcon();
                 SetControlPanelVisibility(true);
 
                 stateMachine?.SetState(AppState.PlayingVideo);
-                stateMachine?.SetAction("playing");
+                stateMachine?.SetAction(autoPlay ? "playing" : "paused");
                 stateMachine?.SetContent(name, fileId);
             }
 
-            private void StartPlaybackFromLocal(string localPath, string name, string fileId)
+            private void StartPlaybackFromLocal(string localPath, string name, string fileId, bool autoPlay)
             {
+                ApplyVideoQuality();
+                ResetCurrentVideoSurface(false);
+                PrepareVideoPlayerForPlayback();
+                playbackRequestStartedAt = Time.realtimeSinceStartup;
+                playbackSourceLabel = "local";
+                pendingAutoPlay = autoPlay;
                 lastDisplayedSecond = -1;
                 videoPlayer.skipOnDrop = true;   // drop frames instead of stalling when decoder falls behind
                 // Prefix required by Unity on all platforms
@@ -331,21 +352,25 @@ namespace Playback
                 videoPlayer.prepareCompleted += OnVideoPrepared;
                 videoPlayer.Prepare();
 
-                isPlaying = true;
+                isPlaying = autoPlay;
                 UpdatePlayPauseIcon();
                 SetControlPanelVisibility(true);
 
                 stateMachine?.SetState(AppState.PlayingVideo);
-                stateMachine?.SetAction("playing");
+                stateMachine?.SetAction(autoPlay ? "playing" : "paused");
                 stateMachine?.SetContent(name, fileId);
 
-                Debug.Log($"[VideoController] Prepared: {localPath} | Mapping: {currentMapping} | Projection: {currentProjection} | Stereo: {currentStereo}");
+                FileLogger.Log($"[Video] Prepare requested source=local path={localPath} size={GetFileSizeLabel(localPath)} mapping={currentMapping} projection={currentProjection} stereo={currentStereo} autoPlay={autoPlay}");
             }
 
             private void OnVideoPrepared(VideoPlayer source)
             {
                 source.prepareCompleted -= OnVideoPrepared;
-                source.Play();
+                FileLogger.Log($"[Video] Prepared source={playbackSourceLabel} elapsed={(Time.realtimeSinceStartup - playbackRequestStartedAt):0.00}s size={source.width}x{source.height} fps={source.frameRate:0.##} frames={source.frameCount} rt={(source.targetTexture != null ? source.targetTexture.width + "x" + source.targetTexture.height : "none")}");
+                if (pendingAutoPlay)
+                    source.Play();
+                else
+                    source.Pause();
                 // ensure icon reflects actual playback state
                 UpdatePlayPauseIcon();
                 // Refresh skybox texture now that the render texture is populated
@@ -375,6 +400,7 @@ namespace Playback
                     RenderSettings.skybox.SetTexture("_MainTex", videoPlayer.targetTexture);
 
                 RenderSettings.skybox.SetInt("_ImageType", currentProjection.Contains("180") ? 1 : 0);
+                RenderSettings.skybox.SetFloat("_Rotation", skyboxYawOffsetDegrees);
 
                 int layout = currentStereo switch
                 {
@@ -415,6 +441,8 @@ namespace Playback
 
             public void StopVideo()
             {
+                float stoppedAt = Time.realtimeSinceStartup;
+                FileLogger.Log($"[Video] Stop requested isPrepared={videoPlayer.isPrepared} isPlaying={videoPlayer.isPlaying} time={videoPlayer.time:0.00}s");
                 // Cancel any in-progress download and remove the incomplete .part file
                 if (downloadCoroutine != null)
                 {
@@ -424,7 +452,7 @@ namespace Playback
                     // Clean up a partially downloaded file if it exists
                     try
                     {
-                        string cacheDir = Path.Combine(Application.persistentDataPath, CacheFolder);
+                        string cacheDir = Path.Combine(ContentCache.Root, "videos");
                         foreach (var part in Directory.GetFiles(cacheDir, "*.part"))
                             File.Delete(part);
                     }
@@ -432,11 +460,12 @@ namespace Playback
                 }
 
                 videoPlayer.prepareCompleted -= OnVideoPrepared; // guard against pending prepare
-                videoPlayer.Stop();
+                ResetCurrentVideoSurface(true);
+                RestoreDefaultQuality();
+                ScheduleUnusedAssetCleanup();
                 isPlaying = false;
                 UpdatePlayPauseIcon();
                 SetControlPanelVisibility(false);
-                RenderSettings.skybox = skyboxDefault; 
                 stateMachine?.SetAction("none");
                 stateMachine?.ClearContent();
 
@@ -451,7 +480,129 @@ namespace Playback
                 {
                     stateMachine.SetState(AppState.Idle);
                 }
-                Debug.Log("[VideoController] Stopping video.");
+                FileLogger.Log($"[Video] Stop completed elapsed={(Time.realtimeSinceStartup - stoppedAt):0.00}s");
+            }
+
+            private void ResetCurrentVideoSurface(bool releaseRenderTexture)
+            {
+                if (videoPlayer == null) return;
+                videoPlayer.prepareCompleted -= OnVideoPrepared;
+
+                if (videoPlayer.isPlaying || videoPlayer.isPrepared)
+                {
+                    videoPlayer.Stop();
+                }
+
+                videoPlayer.url = string.Empty;
+                videoPlayer.clip = null;
+                RenderSettings.skybox = skyboxDefault;
+
+                var target = videoPlayer.targetTexture != null ? videoPlayer.targetTexture : videoTargetTexture;
+                if (target == null)
+                {
+                    videoPlayer.enabled = false;
+                    return;
+                }
+
+                if (target.IsCreated())
+                {
+                    var previous = RenderTexture.active;
+                    RenderTexture.active = target;
+                    GL.Clear(false, true, Color.black);
+                    RenderTexture.active = previous;
+                    target.DiscardContents();
+                }
+
+                if (releaseRenderTexture)
+                {
+                    videoPlayer.targetTexture = null;
+                    target.Release();
+                    videoPlayer.enabled = false;
+                }
+            }
+
+            private void PrepareVideoPlayerForPlayback()
+            {
+                if (videoPlayer == null) return;
+
+                if (videoTargetTexture != null)
+                {
+                    if (!videoTargetTexture.IsCreated())
+                        videoTargetTexture.Create();
+                    videoPlayer.targetTexture = videoTargetTexture;
+                }
+
+                videoPlayer.enabled = true;
+            }
+
+            private void ScheduleUnusedAssetCleanup()
+            {
+                if (cleanupCoroutine != null)
+                    StopCoroutine(cleanupCoroutine);
+                cleanupCoroutine = StartCoroutine(UnloadUnusedAssetsSoon());
+            }
+
+            private IEnumerator UnloadUnusedAssetsSoon()
+            {
+                float startedAt = Time.realtimeSinceStartup;
+                FileLogger.Log("[Video] UnloadUnusedAssets begin");
+                yield return null;
+                yield return Resources.UnloadUnusedAssets();
+                GC.Collect();
+                FileLogger.Log($"[Video] UnloadUnusedAssets complete elapsed={(Time.realtimeSinceStartup - startedAt):0.00}s");
+                cleanupCoroutine = null;
+            }
+
+            private void ApplyVideoQuality()
+            {
+                SetMsaaSamples(videoMsaaSamples);
+                videoQualityActive = true;
+            }
+
+            private void RestoreDefaultQuality()
+            {
+                if (!videoQualityActive) return;
+
+                SetMsaaSamples(defaultMsaaSamples);
+                videoQualityActive = false;
+            }
+
+            private static void SetMsaaSamples(int samples)
+            {
+                int normalized = NormalizeMsaaSamples(samples);
+                QualitySettings.antiAliasing = normalized;
+
+                if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urpAsset)
+                {
+                    urpAsset.msaaSampleCount = normalized;
+                }
+            }
+
+            private static int NormalizeMsaaSamples(int samples)
+            {
+                if (samples >= 8) return 8;
+                if (samples >= 4) return 4;
+                if (samples >= 2) return 2;
+                return 1;
+            }
+
+            private static string ShortUrl(string url)
+            {
+                if (string.IsNullOrWhiteSpace(url)) return "none";
+                return url.Length <= 96 ? url : url.Substring(0, 93) + "...";
+            }
+
+            private static string GetFileSizeLabel(string path)
+            {
+                try
+                {
+                    if (!File.Exists(path)) return "missing";
+                    return $"{new FileInfo(path).Length / (1024f * 1024f):0.0}MB";
+                }
+                catch
+                {
+                    return "unknown";
+                }
             }
 
             // UI Control Methods
@@ -486,12 +637,14 @@ namespace Playback
 
             private void OnSliderValueChanged(float value)
             {
-                // Only seek when user is actively dragging
-                if (videoPlayer.isPrepared && isDragging)
-                {
-                    double targetTime = value * videoPlayer.length;
-                    videoPlayer.time = targetTime;
-                }
+                if (!videoPlayer.isPrepared || videoPlayer.length <= 0)
+                    return;
+
+                // Playback progress is pushed with SetValueWithoutNotify(), so value-changed
+                // callbacks here are user interactions from clicking/grabbing the playbar.
+                double targetTime = Mathf.Clamp01(value) * videoPlayer.length;
+                Seek(targetTime);
+                RestartControlPanelAutoHideTimer();
             }
 
             public void OnSliderPointerDown()
@@ -506,6 +659,7 @@ namespace Playback
                 {
                     double targetTime = seekSlider.value * videoPlayer.length;
                     Seek(targetTime);
+                    RestartControlPanelAutoHideTimer();
                 }
             }
 

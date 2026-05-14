@@ -25,7 +25,6 @@ namespace Net
 
         public void Handle(string json)
         {
-            Debug.Log($"[CommandRouter] << {json}");
             Envelope env = JsonUtility.FromJson<Envelope>(json);
             switch (env.type)
             {
@@ -33,7 +32,7 @@ namespace Net
                     {
                         PlayVideoCmd cmd = JsonUtility.FromJson<PlayVideoCmd>(json);
                         string url = settings.WebsiteUrl + cmd.url;
-                        videoController.PlayVideo(url, cmd.name, cmd.fileId);
+                        videoController.PlayVideo(url, cmd.name, cmd.fileId, autoPlay: false);
                         break;
                     }
                 case "video.changeMapping":
@@ -71,6 +70,7 @@ namespace Net
                         }
                         state?.SetState(AppState.Idle);
                         state?.SetAction("none");
+                        state?.ClearContent();
                         break;
                     }
                 case "model.load":
